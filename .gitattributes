@@ -1,0 +1,8 @@
+# Normalize line endings: LF in the repository, native in the working tree.
+* text=auto eol=lf
+
+*.png binary
+*.jpg binary
+*.gds binary
+*.npy binary
+*.npz binary
