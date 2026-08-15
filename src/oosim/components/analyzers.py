@@ -4,10 +4,15 @@ from __future__ import annotations
 
 import numpy as np
 
-from ..analysis import eye_histogram, measure_eye
+from ..analysis import (
+    constellation_histogram,
+    eye_histogram,
+    measure_constellation,
+    measure_eye,
+)
 from ..component import BoolParam, Component, Param, PortType
 from ..context import SimulationContext
-from ..signals import BinarySignal, ElectricalSignal, Signal
+from ..signals import BinarySignal, ElectricalSignal, Signal, SymbolSignal
 
 
 class BERAnalyzer(Component):
@@ -86,3 +91,86 @@ class EyeDiagram(Component):
             unit=waveform.unit,
         )
         return {"out": histogram}
+
+
+class ConstellationAnalyzer(Component):
+    """Vector signal analyser: EVM, SNR, and counted symbol and bit errors.
+
+    Takes the transmitted symbols on a second input for the same reason
+    :class:`BERAnalyzer` takes the transmitted bits — so errors can be *counted*
+    and not only inferred. The reference is also what makes the phase and
+    frequency-offset removal data-aided rather than blind, which is how a bench
+    analyser works when it knows the pattern.
+
+    The binned diagram is a separate block, :class:`ConstellationDiagram`, for
+    the same reason the eye diagram is separate from the BER analyser: a number
+    and a picture are wanted at different times, and a block that always produces
+    both makes the cheap one cost as much as the expensive one.
+    """
+
+    display_name = "Constellation Analyzer"
+    category = "Measurements"
+
+    ignore_edges = Param(0.0, unit="", min=0.0, doc="Symbols to discard at each end of the window")
+    remove_frequency_offset = BoolParam(
+        True, doc="Estimate and remove a carrier frequency offset before measuring"
+    )
+
+    inputs = {"in": PortType.SYMBOL, "reference": PortType.SYMBOL}
+    outputs = {"out": PortType.METRIC}
+
+    def run(self, ctx: SimulationContext, inputs: dict[str, Signal]) -> dict[str, Signal]:
+        received: SymbolSignal = inputs["in"]
+        reference: SymbolSignal = inputs["reference"]
+
+        if received.num_symbols != reference.num_symbols:
+            raise ValueError(
+                f"{self.label}: received {received.num_symbols} symbols against a "
+                f"reference of {reference.num_symbols}"
+            )
+        if received.order != reference.order:
+            raise ValueError(
+                f"{self.label}: received a {received.order}-point constellation against a "
+                f"{reference.order}-point reference; the two ends disagree on the format"
+            )
+
+        measurement = measure_constellation(
+            np.asarray(received.symbols),
+            np.asarray(reference.symbols),
+            np.asarray(reference.constellation),
+            symbol_rate=reference.symbol_rate,
+            remove_frequency_offset=self.remove_frequency_offset,
+            ignore_edges=int(self.ignore_edges),
+        )
+        return {"out": measurement}
+
+
+class ConstellationDiagram(Component):
+    """Bins a received symbol sequence into a constellation diagram.
+
+    The counterpart of :class:`EyeDiagram` for a format that lives in the complex
+    plane, and the engine's second reduced result type. It exists for the same
+    reason the first one does: a renderer receives a fixed-size array whose size
+    follows the requested resolution, never a symbol buffer.
+    """
+
+    display_name = "Constellation Diagram"
+    category = "Measurements"
+
+    bins = Param(128.0, unit="", min=8.0, doc="Resolution along each axis")
+    extent = Param(
+        1.6, unit="", min=0.1, doc="Half-width of the window, in outermost-point magnitudes"
+    )
+
+    inputs = {"in": PortType.SYMBOL}
+    outputs = {"out": PortType.METRIC}
+
+    def run(self, ctx: SimulationContext, inputs: dict[str, Signal]) -> dict[str, Signal]:
+        received: SymbolSignal = inputs["in"]
+        diagram = constellation_histogram(
+            np.asarray(received.symbols),
+            np.asarray(received.constellation),
+            bins=int(self.bins),
+            extent=self.extent,
+        )
+        return {"out": diagram}

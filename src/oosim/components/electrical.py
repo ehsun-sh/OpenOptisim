@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import numpy as np
 
-from ..component import Component, Param, PortType
+from ..component import BoolParam, Component, Param, PortType
 from ..context import SimulationContext
-from ..signals import BinarySignal, ElectricalSignal, Signal
+from ..signals import BinarySignal, ElectricalSignal, Signal, SymbolSignal
 
 #: Maximal-length LFSR feedback taps, as (order, tap) exponent pairs.
 #: These are the standard polynomials used across optical test equipment;
@@ -38,6 +38,13 @@ class PRBSGenerator(Component):
     category = "Electrical Sources"
 
     order = Param(7.0, unit="", min=7.0, max=31.0, doc="LFSR order n; period is 2**n - 1")
+    bits_per_symbol = Param(
+        1.0,
+        unit="",
+        min=1.0,
+        max=8.0,
+        doc="Bits each downstream symbol carries; scales how many bits are emitted",
+    )
 
     outputs = {"out": PortType.BINARY}
 
@@ -56,13 +63,19 @@ class PRBSGenerator(Component):
         rng = ctx.rng("PRBSGenerator", self.label, order)
         state = int(rng.integers(1, 1 << n))
 
-        bits = np.empty(ctx.sequence_length, dtype=np.uint8)
-        for i in range(ctx.sequence_length):
+        # The window is measured in symbols, not bits. A binary format consumes
+        # one bit per symbol; a higher-order one consumes several, and the
+        # generator has to emit enough of them to fill the same window.
+        per_symbol = int(self.bits_per_symbol)
+        count = ctx.sequence_length * per_symbol
+
+        bits = np.empty(count, dtype=np.uint8)
+        for i in range(count):
             feedback = ((state >> (n - 1)) ^ (state >> (tap - 1))) & 1
             bits[i] = state & 1
             state = ((state << 1) | feedback) & ((1 << n) - 1)
 
-        return {"out": BinarySignal(bits=bits, symbol_rate=ctx.bit_rate)}
+        return {"out": BinarySignal(bits=bits, symbol_rate=ctx.bit_rate * per_symbol)}
 
 
 class NRZDriver(Component):
@@ -97,6 +110,81 @@ class NRZDriver(Component):
                 samples=samples.astype(ctx.real_dtype), fs=ctx.sample_rate, unit="V"
             )
         }
+
+
+class IQDriver(Component):
+    """Turns complex symbols into the two drive waveforms an IQ modulator wants.
+
+    The real and imaginary parts are held for a full symbol, exactly as
+    :class:`NRZDriver` holds a bit, and scaled so that the constellation's
+    outermost quadrature level reaches ``drive_ratio * v_pi``.
+
+    **Why pre-distortion lives here.** A child MZM biased at its null has *field*
+    transmission ``sin(pi*V/(2*V_pi))`` — linear only for small drives. Driven at
+    full swing it compresses the outer levels of a 16-QAM constellation while
+    leaving QPSK untouched, because QPSK only ever uses the extremes. Real
+    transmitters correct this in the DSP by pre-applying the inverse, and so does
+    this block: with ``predistort`` on, the drive is
+    ``(2*V_pi/pi) * arcsin(drive_ratio * f)`` and the field that emerges is
+    proportional to the symbol. Turning it off leaves the compression visible,
+    which is the point of being able to turn it off.
+
+    ``v_pi`` is declared here as well as on the modulator because the correction
+    genuinely needs it: a transmitter DSP that does not know the modulator's V_pi
+    cannot linearise it. Setting the two to different values models exactly that
+    mismatch.
+    """
+
+    display_name = "IQ Driver"
+    category = "Electrical"
+
+    v_pi = Param(4.0, unit="V", min=0.0, doc="The modulator's V_pi, as the DSP believes it")
+    drive_ratio = Param(
+        1.0,
+        unit="",
+        min=0.01,
+        max=1.0,
+        doc="Peak drive as a fraction of V_pi; back off to linearise",
+    )
+    predistort = BoolParam(True, doc="Pre-invert the modulator's sine so the field is linear")
+
+    inputs = {"in": PortType.SYMBOL}
+    outputs = {"i": PortType.ELECTRICAL, "q": PortType.ELECTRICAL}
+
+    def _drive(self, quadrature: np.ndarray, peak: float) -> np.ndarray:
+        """Map a normalised quadrature in [-1, 1] to a drive voltage [V]."""
+        v_pi = self.si("v_pi")
+        ratio = self.drive_ratio
+        if self.predistort:
+            return (2.0 * v_pi / np.pi) * np.arcsin(np.clip(ratio * quadrature / peak, -1.0, 1.0))
+        return ratio * v_pi * quadrature / peak
+
+    def run(self, ctx: SimulationContext, inputs: dict[str, Signal]) -> dict[str, Signal]:
+        symbols: SymbolSignal = inputs["in"]
+        if symbols.num_symbols != ctx.sequence_length:
+            raise ValueError(
+                f"{self.label}: got {symbols.num_symbols} symbols but the run window "
+                f"holds {ctx.sequence_length}"
+            )
+        if self.si("v_pi") <= 0.0:
+            raise ValueError(f"{self.label}: v_pi must be positive, got {self.v_pi}")
+
+        # Normalise against the *alphabet*, not the symbols that happened to be
+        # sent, so a short sequence that never uses an outer point still lands on
+        # the same voltages as a long one.
+        points = np.asarray(symbols.constellation).astype(np.complex128)
+        peak = float(max(np.abs(points.real).max(), np.abs(points.imag).max()))
+        if peak <= 0.0:
+            raise ValueError(f"{self.label}: the constellation collapses to the origin")
+
+        values = np.asarray(symbols.symbols).astype(np.complex128)
+        out = {}
+        for name, quadrature in (("i", values.real), ("q", values.imag)):
+            samples = np.repeat(self._drive(quadrature, peak), ctx.samples_per_symbol)
+            out[name] = ElectricalSignal(
+                samples=samples.astype(ctx.real_dtype), fs=ctx.sample_rate, unit="V"
+            )
+        return out
 
 
 class DCVoltage(Component):

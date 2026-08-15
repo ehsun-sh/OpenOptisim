@@ -9,10 +9,12 @@
 
 ---
 
-> ### ⚠️ Project status: pre-alpha — Phases 0, 1 and 1.5 complete
+> ### ⚠️ Project status: pre-alpha — Phases 0, 1 and 1.5 complete; single-polarization coherent working
 >
-> A complete 10 Gb/s OOK link runs end to end and produces numbers that match theory:
-> PRBS → NRZ → CW laser → MZM → fiber (loss + dispersion) → PIN → filter → eye/Q/BER.
+> Two complete links run end to end and produce numbers that match theory.
+> **Direct detection:** PRBS → NRZ → CW laser → MZM → fiber (loss + dispersion) → PIN → filter →
+> eye/Q/BER. **Coherent:** PRBS → Gray-coded M-QAM → IQ driver → IQ modulator → 90° hybrid with
+> balanced detection → EVM/SNR and counted symbol errors, up to 256-QAM.
 > Every physics block is validated against a closed-form result in CI.
 >
 > Projects save to versioned JSON and sweeps are first-class, so a curve is one call rather than
@@ -100,6 +102,30 @@ filter and analyzer all have to agree for that to hold; it is
 
 Both curves come from `sweep()`, and the same script writes the schematic to
 [`examples/ook_link.oosim`](examples/ook_link.oosim) — versioned JSON, diffable, runnable headless.
+
+### Coherent
+
+`python examples/coherent_link.py` runs the same treatment on a 32 GBd coherent link —
+PRBS → Gray-coded M-QAM → IQ driver → IQ modulator → 90° hybrid with balanced detection —
+and finds the received power each format needs for a BER of 1e-3:
+
+```
+format     rate      launch for BER 1e-3     SNR there   EVM there
+BPSK          32 Gb/s      -38.0 dBm received        6.9 dB     45.2%
+QPSK          64 Gb/s      -35.0 dBm received        9.9 dB     32.0%
+16-QAM       128 Gb/s      -27.5 dBm received       17.4 dB     13.5%
+64-QAM       192 Gb/s      -21.7 dBm received       23.2 dB      6.9%
+256-QAM      256 Gb/s      -16.3 dBm received       28.7 dB      3.7%
+```
+
+The required-SNR column is the one to check against a textbook: 9.9 / 17.4 / 23.2 / 28.7 dB are
+the standard figures for QPSK through 256-QAM at 1e-3. The step from BPSK to QPSK costs exactly
+3 dB — the same energy per bit for twice the rate, which is why coherent systems start at QPSK
+and never look back.
+
+Nothing here is configured to come out right. The shot-noise-limited SNR is asserted against
+`R·P/(2qB)`, the counted symbol errors against
+[`ser_qam()`](src/oosim/modulation.py), and the modulator's 3 dB against `10·log10(2)`.
 
 ```python
 result = sweep(graph, {("laser", "power"): [-24.0, -21.0, -18.0]}, runs=8)
@@ -267,8 +293,8 @@ time window, and results are reproducible.
 | **0 — Foundations** ✅ | Signal model, context, port types, component base, registry, scheduler, `.oosim` project format, sweeps, CI | ~1 month |
 | **1 — MVP: linear link** *(essentially done)* | ✅ PRBS → NRZ → laser → MZM → fiber (α + CD) → PIN → filter → eye/Q/BER, validated end to end. **Python only, no GUI.** | ~2–3 months |
 | **1.5 — Nonlinear & amplified** ✅ | Adaptive-step SSFM, Kerr, EDFA with ASE, OSNR, PMD, APD | ~2 months |
-| **2 — GUI & DSP** *(design started)* | ✅ Layout agreed, [interactive mockup](docs/ui-mockup.html) built on real engine output · ⬜ session server, graph editor, DSP blocks, OSA, constellation | ~3–4 months |
-| **3 — Coherent & WDM** | IQ mod, M-QAM, LO, 90° hybrid, balanced detection, coherent DSP, DWDM + crosstalk, 400G/800G references, CuPy back-end | ~6 months |
+| **2 — Coherent transceiver** *(single-pol done)* | ✅ Gray-coded M-QAM to 256, IQ modulator with bias and quadrature error, 90° hybrid, balanced detection, EVM/MER, constellation diagram, validated against closed-form SER · ⬜ dual polarization, blind carrier recovery, pulse shaping, adaptive equaliser | ~3 months |
+| **3 — GUI & WDM** | Session server, React Flow graph editor, OSA · DWDM + XPM/FWM crosstalk, 400G/800G references, CuPy back-end | ~6 months |
 | **4 — PIC** | Waveguides, ring resonators, MMI, MZI via integration with an existing S-matrix solver; PDK import | — |
 
 ¹ One developer, part-time. Estimates, not commitments.

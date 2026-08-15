@@ -14,7 +14,19 @@ import math
 
 import numpy as np
 
-from .signals import Band, EyeHistogram, EyeMeasurement, OpticalSignal
+from .modulation import (
+    error_vector_magnitude,
+    indices_to_bits,
+    nearest_indices,
+)
+from .signals import (
+    Band,
+    ConstellationHistogram,
+    ConstellationMeasurement,
+    EyeHistogram,
+    EyeMeasurement,
+    OpticalSignal,
+)
 
 
 def instantaneous_power(band: Band) -> np.ndarray:
@@ -268,4 +280,175 @@ def eye_histogram(
         time_edges=time_edges,
         amplitude_edges=amplitude_edges,
         unit=unit,
+    )
+
+
+# --------------------------------------------------------------------------
+# Constellation analysis
+# --------------------------------------------------------------------------
+
+
+def estimate_frequency_offset(
+    received: np.ndarray, reference: np.ndarray, symbol_rate: float
+) -> float:
+    """Data-aided carrier frequency offset [Hz].
+
+    The per-symbol complex gain ``e[k] = r[k] * conj(s[k])`` is constant apart
+    from noise when the two carriers agree, and rotates at the offset when they
+    do not. Averaging ``e[k+1] * conj(e[k])`` across the sequence and taking its
+    angle gives the mean phase step per symbol, which is the offset — and
+    averaging the *product* rather than the individual angles is what keeps a
+    noisy symbol from contributing a wrapped phase.
+
+    Unambiguous only for offsets below half a symbol rate, which is the same
+    Nyquist limit any real estimator has.
+    """
+    if received.shape != reference.shape:
+        raise ValueError(f"shape mismatch: received {received.shape}, reference {reference.shape}")
+    if received.size < 2:
+        return 0.0
+
+    error = received.astype(np.complex128) * np.conj(reference.astype(np.complex128))
+    step = complex(np.sum(error[1:] * np.conj(error[:-1])))
+    if step == 0:
+        return 0.0
+    return float(np.angle(step)) * symbol_rate / (2.0 * math.pi)
+
+
+def measure_constellation(
+    received: np.ndarray,
+    reference: np.ndarray,
+    constellation: np.ndarray,
+    *,
+    symbol_rate: float = 1.0,
+    remove_frequency_offset: bool = True,
+    ignore_edges: int = 0,
+) -> ConstellationMeasurement:
+    """Take vector-signal-analyser measurements on a received symbol sequence.
+
+    The transmitted sequence is used to remove a common complex gain — and
+    optionally a carrier frequency offset — before anything is measured. This is
+    *data-aided* estimation, and it is what a bench analyser does when it is given
+    the reference: a constant phase rotation or a residual AGC error is a property
+    of the receiver's carrier recovery, not of the link's noise, and leaving it in
+    would report it as EVM.
+
+    What is deliberately not removed: anything varying per symbol. Noise, phase
+    noise and nonlinear distortion all survive, because those are what the
+    measurement is for.
+    """
+    if received.shape != reference.shape:
+        raise ValueError(f"shape mismatch: received {received.shape}, reference {reference.shape}")
+    if ignore_edges > 0:
+        if 2 * ignore_edges >= received.shape[0]:
+            raise ValueError(
+                f"ignore_edges={ignore_edges} would discard the whole sequence "
+                f"of {received.shape[0]} symbols"
+            )
+        received = received[ignore_edges:-ignore_edges]
+        reference = reference[ignore_edges:-ignore_edges]
+    if received.size == 0:
+        raise ValueError("cannot measure an empty symbol sequence")
+
+    r = received.astype(np.complex128)
+    s = reference.astype(np.complex128)
+    points = np.asarray(constellation).astype(np.complex128)
+
+    reference_power = float(np.mean(np.abs(s) ** 2))
+    if reference_power <= 0.0:
+        raise ValueError("the reference sequence carries no power")
+
+    def corrected(offset: float) -> tuple[float, np.ndarray, complex]:
+        """Derotate by ``offset``, fit out the common gain, and report the EVM."""
+        rotated = r
+        if offset != 0.0:
+            index = np.arange(r.shape[0], dtype=np.float64)
+            rotated = r * np.exp(-2j * math.pi * offset * index / symbol_rate)
+        gain = complex(np.mean(rotated * np.conj(s)) / reference_power)
+        if gain != 0:
+            rotated = rotated / gain
+        return error_vector_magnitude(rotated, s), rotated, gain
+
+    evm, r, gain = corrected(0.0)
+    offset = 0.0
+    if remove_frequency_offset:
+        # Estimate, apply, and keep the correction only if it actually helped.
+        #
+        # The estimator averages the error phasor's turn per symbol, which assumes
+        # what is left after the reference is divided out is noise. Deterministic
+        # distortion breaks that: it is correlated with the data, so a PRBS whose
+        # symbol order is not phase-symmetric biases the average. The bias is
+        # tiny — a few parts in ten thousand of the symbol rate — but a frequency
+        # error accumulates, and over a few thousand symbols parts-per-ten-
+        # thousand becomes radians, which turns a 14% EVM into a meaningless one.
+        #
+        # A coherence test does not catch this; the spurious phasor is highly
+        # coherent, because the bias is systematic rather than random. Comparing
+        # the two candidates does catch it, and it also gives the correction
+        # stage the property one actually wants: it can never make the
+        # measurement worse than leaving it alone.
+        candidate = estimate_frequency_offset(r * gain, s, symbol_rate)
+        if candidate != 0.0:
+            candidate_evm, candidate_r, candidate_gain = corrected(candidate)
+            if candidate_evm < evm:
+                evm, r, gain, offset = candidate_evm, candidate_r, candidate_gain, candidate
+
+    bits_per_symbol = int(points.shape[0]).bit_length() - 1
+    decided = nearest_indices(r, points)
+    transmitted = nearest_indices(s, points)
+    symbol_errors = int(np.count_nonzero(decided != transmitted))
+    decided_bits = indices_to_bits(decided, bits_per_symbol)
+    transmitted_bits = indices_to_bits(transmitted, bits_per_symbol)
+    bit_errors = int(np.count_nonzero(decided_bits != transmitted_bits))
+
+    return ConstellationMeasurement(
+        evm=evm,
+        symbols_evaluated=int(r.shape[0]),
+        symbol_errors=symbol_errors,
+        bits_evaluated=int(r.shape[0]) * bits_per_symbol,
+        bit_errors=bit_errors,
+        gain=gain,
+        frequency_offset=offset,
+        bits_per_symbol=bits_per_symbol,
+    )
+
+
+def constellation_histogram(
+    symbols: np.ndarray,
+    constellation: np.ndarray,
+    *,
+    bins: int = 128,
+    extent: float = 1.6,
+) -> ConstellationHistogram:
+    """Bin a symbol sequence into a constellation diagram.
+
+    ``extent`` is in units of the largest constellation point's magnitude, so the
+    window frames the alphabet rather than the noise: a default of 1.6 leaves room
+    for the scatter around the outer points without letting a handful of far
+    outliers set the scale and squeeze everything into the centre.
+
+    Symbols outside the window are dropped rather than piled into the edge bins —
+    an edge bin that accumulates every outlier looks like a real cluster.
+    """
+    if bins < 2:
+        raise ValueError(f"bins must be >= 2, got {bins}")
+    if extent <= 0.0:
+        raise ValueError(f"extent must be positive, got {extent}")
+
+    points = np.asarray(constellation).astype(np.complex128)
+    scale = float(np.abs(points).max()) if points.size else 1.0
+    if scale <= 0.0:
+        scale = 1.0
+    limit = extent * scale
+    edges = np.linspace(-limit, limit, bins + 1)
+
+    values = np.asarray(symbols).astype(np.complex128)
+    counts, quadrature_edges, inphase_edges = np.histogram2d(
+        values.imag, values.real, bins=(edges, edges)
+    )
+    return ConstellationHistogram(
+        counts=counts,
+        inphase_edges=inphase_edges,
+        quadrature_edges=quadrature_edges,
+        reference=points,
     )

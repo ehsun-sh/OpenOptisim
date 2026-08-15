@@ -95,6 +95,11 @@ _TO_SI: dict[str, Callable[[float], float]] = {
     "ps": lambda x: x * 1e-12,
     # Voltage
     "V": lambda x: x,
+    # Angle. Declared in degrees because that is how phase and quadrature errors
+    # are specified on a datasheet, and converted to radians because that is what
+    # every trigonometric call downstream needs.
+    "rad": lambda x: x,
+    "deg": lambda x: x * math.pi / 180.0,
 }
 
 _FROM_SI: dict[str, Callable[[float], float]] = {
@@ -118,6 +123,8 @@ _FROM_SI: dict[str, Callable[[float], float]] = {
     "s": lambda x: x,
     "ps": lambda x: x * 1e12,
     "V": lambda x: x,
+    "rad": lambda x: x,
+    "deg": lambda x: x * 180.0 / math.pi,
 }
 
 
