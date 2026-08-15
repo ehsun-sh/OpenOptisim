@@ -54,3 +54,45 @@ class CWLaser(Component):
             fs=ctx.sample_rate,
         )
         return {"out": OpticalSignal(bands=(band,))}
+
+
+class GaussianPulse(Component):
+    """A single chirped Gaussian pulse, centred in the time window.
+
+    Follows the standard form (Agrawal, *Nonlinear Fiber Optics*, eq. 3.2.1)::
+
+        A(0, T) = sqrt(P0) * exp(-(1 + i*C) / 2 * (T / T0)**2)
+
+    so the intensity envelope is ``P0 * exp(-(T/T0)**2)`` and ``width`` is T0, the
+    1/e half-width of the *intensity* (``T_FWHM = 1.665 * T0``).
+
+    This exists because dispersion has an exact analytical solution for a Gaussian
+    input, which makes it the reference input for validating the fiber model.
+    """
+
+    display_name = "Gaussian Pulse"
+    category = "Optical Sources"
+
+    peak_power = Param(0.0, unit="dBm", doc="Peak power P0 (not average power)")
+    width = Param(10.0, unit="ps", min=0.0, doc="T0, the 1/e intensity half-width")
+    chirp = Param(0.0, doc="Linear chirp parameter C; sign matters against beta2")
+    wavelength = Param(1550.0, unit="nm", min=1200.0, max=1700.0, doc="Vacuum wavelength")
+
+    outputs = {"out": PortType.OPTICAL}
+
+    def run(self, ctx: SimulationContext, inputs: dict[str, Signal]) -> dict[str, Signal]:
+        t0 = self.si("width")
+        if t0 <= 0.0:
+            raise ValueError(f"{self.label}: width must be positive, got {self.width}")
+
+        tau = (ctx.time_axis() - ctx.time_window / 2.0) / t0
+        amplitude = np.sqrt(self.si("peak_power"))
+        Ex = amplitude * np.exp(-(1.0 + 1j * self.chirp) * tau**2 / 2.0)
+
+        band = Band(
+            Ex=Ex.astype(ctx.complex_dtype),
+            Ey=np.zeros(ctx.num_samples, dtype=ctx.complex_dtype),
+            f0=C_LIGHT / self.si("wavelength"),
+            fs=ctx.sample_rate,
+        )
+        return {"out": OpticalSignal(bands=(band,))}

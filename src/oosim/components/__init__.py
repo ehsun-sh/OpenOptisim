@@ -10,6 +10,6 @@ from __future__ import annotations
 from .fiber import Fiber
 from .meters import PowerMeter
 from .passive import Attenuator, Combiner
-from .sources import CWLaser
+from .sources import CWLaser, GaussianPulse
 
-__all__ = ["Attenuator", "CWLaser", "Combiner", "Fiber", "PowerMeter"]
+__all__ = ["Attenuator", "CWLaser", "Combiner", "Fiber", "GaussianPulse", "PowerMeter"]

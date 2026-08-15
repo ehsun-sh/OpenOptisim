@@ -12,11 +12,11 @@
 > ### ⚠️ Project status: pre-alpha, Phase 0
 >
 > The engine core exists and is tested: simulation context, multi-band optical signal model,
-> typed ports, component/parameter system, and the block-mode scheduler. Four components are
-> implemented — CW laser, fiber (attenuation only), combiner/attenuator, power meter — and the
-> physics is validated against closed-form results in CI.
+> typed ports, component/parameter system, and the block-mode scheduler. Implemented components:
+> CW laser, Gaussian pulse source, fiber (attenuation + chromatic dispersion), combiner,
+> attenuator, power meter — with the physics validated against closed-form results in CI.
 >
-> **Not implemented yet:** modulators, photodetectors, dispersion, SSFM/nonlinearity, DSP,
+> **Not implemented yet:** modulators, photodetectors, SSFM/nonlinearity, PMD, amplifiers, DSP,
 > BER/eye analysis, and the GUI. Those are Phases 1–2; see the [roadmap](#roadmap).
 >
 > This is not yet a useful simulator. It is a foundation with the expensive decisions made and
@@ -222,8 +222,11 @@ Every physics block ships with a test against a closed-form result, run in CI
 | Source power | Independent of the simulated time window | ✅ |
 | Phase noise | Broadens the line, conserves average power | ✅ |
 | Multi-carrier | Channels stay separate bands; spacing does not drive `Fs` | ✅ |
-| Gaussian pulse, CD only | `T(z) = T₀·√(1 + (z/L_D)²)`, `L_D = T₀²/\|β₂\|` | ⬜ |
-| Lossless SSFM | Energy conserved (Parseval) | ⬜ |
+| Gaussian pulse, CD only | `T₁/T₀ = √(1 + (z/L_D)²)`, `L_D = T₀²/\|β₂\|` | ✅ |
+| Chirped Gaussian | `T₁/T₀ = √((1 + Cβ₂z/T₀²)² + (β₂z/T₀²)²)` — pins the sign of β₂ | ✅ |
+| Dispersion compensation | `+D` then `−D` restores the input sample-for-sample | ✅ |
+| GVD | Energy conserved (Parseval); β₂ = −Dλ²/2πc per band | ✅ |
+| Lossless SSFM | Energy conserved with nonlinearity | ⬜ |
 | Fundamental soliton (N=1) | Envelope magnitude invariant along propagation | ⬜ |
 | Ideal push-pull MZM | `P_out/P_in = cos²(πV / 2V_π)` | ⬜ |
 | PIN detector | `I = R·P`; shot `σ² = 2qIB`; thermal `σ² = 4kTB/R_L` | ⬜ |

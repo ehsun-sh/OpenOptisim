@@ -74,6 +74,8 @@ _TO_SI: dict[str, Callable[[float], float]] = {
     # Ratios
     "dB": db_to_linear,
     "dB/km": lambda x: x * 1e-3,  # -> dB/m (still logarithmic, per metre)
+    # Dispersion: ps/(nm*km) -> s/m^2
+    "ps/nm/km": lambda x: x * 1e-6,
     # Length
     "m": lambda x: x,
     "km": lambda x: x * 1e3,
@@ -98,6 +100,7 @@ _FROM_SI: dict[str, Callable[[float], float]] = {
     "dBm": w_to_dbm,
     "dB": linear_to_db,
     "dB/km": lambda x: x * 1e3,
+    "ps/nm/km": lambda x: x * 1e6,
     "m": lambda x: x,
     "km": lambda x: x * 1e-3,
     "nm": lambda x: x * 1e9,
