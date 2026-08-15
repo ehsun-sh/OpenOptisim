@@ -9,7 +9,7 @@
 
 ---
 
-> ### ⚠️ Project status: pre-alpha, Phase 0
+> ### ⚠️ Project status: pre-alpha — Phases 0, 1 and 1.5 complete
 >
 > A complete 10 Gb/s OOK link runs end to end and produces numbers that match theory:
 > PRBS → NRZ → CW laser → MZM → fiber (loss + dispersion) → PIN → filter → eye/Q/BER.
@@ -18,10 +18,11 @@
 > Projects save to versioned JSON and sweeps are first-class, so a curve is one call rather than
 > a hand-written loop that mutates the graph.
 >
-> Fiber nonlinearity is solved by adaptive-step split-step Fourier, and EDFAs emit ASE into the
-> noise-bin model, so amplified multi-span links give correct OSNR.
+> Fiber nonlinearity is solved by adaptive-step split-step Fourier, EDFAs emit ASE into the
+> noise-bin model so amplified multi-span links give correct OSNR, and PMD is drawn as a random
+> realisation with the right Maxwellian statistics.
 >
-> **Not implemented yet:** PMD, cross-phase modulation and four-wave mixing between channels,
+> **Not implemented yet:** cross-phase modulation and four-wave mixing between channels,
 > equalisers, coherent detection, and the GUI. See the [roadmap](#roadmap).
 >
 > This is not yet a useful simulator. It is a foundation with the expensive decisions made and
@@ -265,7 +266,7 @@ time window, and results are reproducible.
 | :--- | :--- | :--- |
 | **0 — Foundations** ✅ | Signal model, context, port types, component base, registry, scheduler, `.oosim` project format, sweeps, CI | ~1 month |
 | **1 — MVP: linear link** *(essentially done)* | ✅ PRBS → NRZ → laser → MZM → fiber (α + CD) → PIN → filter → eye/Q/BER, validated end to end. **Python only, no GUI.** | ~2–3 months |
-| **1.5 — Nonlinear & amplified** *(mostly done)* | ✅ Adaptive-step SSFM, Kerr, EDFA with ASE, OSNR · ⬜ PMD, APD, XPM/FWM | ~2 months |
+| **1.5 — Nonlinear & amplified** ✅ | Adaptive-step SSFM, Kerr, EDFA with ASE, OSNR, PMD, APD | ~2 months |
 | **2 — GUI & DSP** | Graph editor, plots, pulse shaping, FIR, equalizers (LMS/CMA), OSA, constellation, sweeps | ~3–4 months |
 | **3 — Coherent & WDM** | IQ mod, M-QAM, LO, 90° hybrid, balanced detection, coherent DSP, DWDM + crosstalk, 400G/800G references, CuPy back-end | ~6 months |
 | **4 — PIC** | Waveguides, ring resonators, MMI, MZI via integration with an existing S-matrix solver; PDK import | — |
@@ -303,7 +304,8 @@ Every physics block ships with a test against a closed-form result, run in CI
 | Higher-order soliton (N=2) | Compresses at half a period, recovers at a full one | ✅ |
 | EDFA | `P_ASE = 2·n_sp·hν·(G−1)·B_o`; `n_sp = NF·G/2(G−1)` | ✅ |
 | OSNR | `58 + P_launch − NF − 10·log10(spans)`, over 16 spans | ✅ |
-| PMD | Differential group delay statistics | ⬜ |
+| **PMD** | DGD Maxwellian: `⟨τ²⟩/⟨τ⟩² = 3π/8`, mean `∝√L`, spread `0.42·mean` | ✅ |
+| APD | `F(M) = kM + (2−1/M)(1−k)`; an **interior optimum gain** exists | ✅ |
 | XPM / FWM | Cross-channel nonlinearity | ⬜ |
 
 Component models are derived from published literature and standards (Agrawal, *Nonlinear Fiber

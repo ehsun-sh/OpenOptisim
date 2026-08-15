@@ -125,10 +125,19 @@ class PropagationDiagnostics:
     peak_nonlinear_phase: float
     """Largest nonlinear phase rotation applied in any single step [rad]."""
 
+    differential_group_delay: float = 0.0
+    """DGD realised on this run [s]. PMD is random, so this differs run to run;
+    it is reported because the value a result depends on should be visible."""
+
     def __repr__(self) -> str:
+        pmd = (
+            f", DGD {self.differential_group_delay * 1e12:.2f} ps"
+            if self.differential_group_delay
+            else ""
+        )
         return (
             f"PropagationDiagnostics({self.steps} steps over {self.distance / 1e3:.1f} km, "
-            f"max phase {self.peak_nonlinear_phase:.4f} rad)"
+            f"max phase {self.peak_nonlinear_phase:.4f} rad{pmd})"
         )
 
 
@@ -211,6 +220,134 @@ def propagate_ssfm(
         longest_step=longest,
         peak_nonlinear_phase=peak_phase,
     )
+
+
+# --------------------------------------------------------------------------
+# Polarization-mode dispersion
+# --------------------------------------------------------------------------
+
+#: Ratio of the mean square DGD to the squared mean, for a Maxwellian
+#: distribution. It is a pure number, so measuring it is a shape test that does
+#: not depend on getting the scale right.
+MAXWELLIAN_MOMENT_RATIO = 3.0 * np.pi / 8.0
+
+
+@dataclass(frozen=True)
+class PMDSection:
+    """One birefringent waveplate: a fixed delay between two random axes."""
+
+    unitary: np.ndarray
+    """2x2 unitary rotating into this section's principal states."""
+
+    dgd: float
+    """Differential group delay of this section [s]."""
+
+
+def random_unitary_2x2(rng: np.random.Generator) -> np.ndarray:
+    """A Haar-uniform SU(2) matrix, built from a random unit quaternion.
+
+    Uniformity matters: birefringence axes in real fiber have no preferred
+    orientation, and sampling them non-uniformly would bias the DGD statistics
+    the whole model exists to reproduce.
+    """
+    q = rng.normal(size=4)
+    q /= np.linalg.norm(q)
+    return np.array(
+        [[q[0] + 1j * q[1], q[2] + 1j * q[3]], [-q[2] + 1j * q[3], q[0] - 1j * q[1]]],
+        dtype=np.complex128,
+    )
+
+
+def random_pmd_sections(
+    mean_dgd: float, sections: int, rng: np.random.Generator
+) -> tuple[PMDSection, ...]:
+    """Build a waveplate chain whose mean DGD is ``mean_dgd``.
+
+    PMD is not a fixed impairment. Birefringence varies randomly along real
+    fiber and drifts with temperature, so the differential group delay is a
+    *random variable* with a Maxwellian distribution — which is why PMD is
+    quoted as a coefficient in ps/sqrt(km) and why outage probability, rather
+    than a worst case, is what gets designed against.
+
+    Concatenating ``N`` randomly oriented waveplates of equal delay reproduces
+    that distribution. Each section's delay follows from the second moment
+    adding while the mean does not::
+
+        <DGD> = section_dgd * sqrt(8N / (3*pi))
+
+    so a target mean fixes the per-section delay. Around 50 sections is enough
+    for the statistics to converge.
+    """
+    if sections < 1:
+        raise ValueError(f"sections must be >= 1, got {sections}")
+    if mean_dgd < 0.0:
+        raise ValueError(f"mean_dgd must be non-negative, got {mean_dgd}")
+
+    section_dgd = mean_dgd * np.sqrt(3.0 * np.pi / (8.0 * sections))
+    return tuple(
+        PMDSection(unitary=random_unitary_2x2(rng), dgd=float(section_dgd)) for _ in range(sections)
+    )
+
+
+def pmd_jones_matrix(sections: tuple[PMDSection, ...], omega: float) -> np.ndarray:
+    """Total Jones transfer matrix of a waveplate chain at angular frequency ``omega``."""
+    total = np.eye(2, dtype=np.complex128)
+    for section in sections:
+        phase = np.exp(0.5j * omega * section.dgd)
+        delay = np.array([[phase, 0.0], [0.0, np.conj(phase)]], dtype=np.complex128)
+        total = section.unitary @ delay @ total
+    return total
+
+
+def differential_group_delay(
+    sections: tuple[PMDSection, ...], *, probe_spacing: float = 2.0 * np.pi * 1e9
+) -> float:
+    """Measure the chain's DGD by Jones matrix eigenanalysis [s].
+
+    Takes the transfer matrix at two nearby frequencies, forms
+    ``J(w2) @ inv(J(w1))``, and reads the delay off the argument of its
+    eigenvalue ratio. This is the method a bench PMD analyser uses, which is a
+    good reason to prefer it over reading the number back out of the parameters
+    that generated it: it measures the chain rather than trusting it.
+
+    ``probe_spacing`` must be small enough that ``probe_spacing * DGD`` stays
+    below pi, or the phase wraps and the answer folds.
+    """
+    if not sections:
+        return 0.0
+
+    j1 = pmd_jones_matrix(sections, -probe_spacing / 2.0)
+    j2 = pmd_jones_matrix(sections, probe_spacing / 2.0)
+    eigenvalues = np.linalg.eigvals(j2 @ np.linalg.inv(j1))
+    difference = np.angle(eigenvalues[0] / eigenvalues[1])
+    return float(abs(difference) / probe_spacing)
+
+
+def apply_pmd(
+    ex: np.ndarray, ey: np.ndarray, sample_rate: float, sections: tuple[PMDSection, ...]
+) -> tuple[np.ndarray, np.ndarray]:
+    """Propagate a Jones vector through a waveplate chain.
+
+    Applied in the frequency domain, section by section, in the same order
+    :func:`pmd_jones_matrix` multiplies them — so what a signal experiences and
+    what the DGD measurement reports are the same chain.
+    """
+    if not sections:
+        return ex.astype(np.complex128, copy=True), ey.astype(np.complex128, copy=True)
+
+    omega = angular_frequency_grid(ex.shape[0], sample_rate)
+    spectrum_x = np.fft.fft(ex.astype(np.complex128))
+    spectrum_y = np.fft.fft(ey.astype(np.complex128))
+
+    for section in sections:
+        phase = np.exp(0.5j * omega * section.dgd)
+        delayed_x = spectrum_x * phase
+        delayed_y = spectrum_y * np.conj(phase)
+        u = section.unitary
+        spectrum_x = u[0, 0] * delayed_x + u[0, 1] * delayed_y
+        spectrum_y = u[1, 0] * delayed_x + u[1, 1] * delayed_y
+
+    return np.fft.ifft(spectrum_x), np.fft.ifft(spectrum_y)
 
 
 def gaussian_lowpass_response(frequency: np.ndarray, bandwidth: float) -> np.ndarray:

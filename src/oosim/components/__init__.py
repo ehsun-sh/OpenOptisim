@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from .amplifiers import EDFA
 from .analyzers import BERAnalyzer, EyeDiagram
-from .detectors import PINPhotodiode
+from .detectors import APDPhotodiode, PINPhotodiode
 from .electrical import DCVoltage, NRZDriver, PRBSGenerator
 from .fiber import Fiber
 from .filters import ElectricalFilter
@@ -20,6 +20,7 @@ from .sources import CWLaser, GaussianPulse, SechPulse
 
 __all__ = [
     "EDFA",
+    "APDPhotodiode",
     "Attenuator",
     "BERAnalyzer",
     "CWLaser",
