@@ -7,9 +7,24 @@ between a plugin system researchers will actually use and one they will not.
 
 from __future__ import annotations
 
+from .detectors import PINPhotodiode
+from .electrical import DCVoltage, NRZDriver, PRBSGenerator
 from .fiber import Fiber
 from .meters import PowerMeter
+from .modulators import MachZehnderModulator
 from .passive import Attenuator, Combiner
 from .sources import CWLaser, GaussianPulse
 
-__all__ = ["Attenuator", "CWLaser", "Combiner", "Fiber", "GaussianPulse", "PowerMeter"]
+__all__ = [
+    "Attenuator",
+    "CWLaser",
+    "Combiner",
+    "DCVoltage",
+    "Fiber",
+    "GaussianPulse",
+    "MachZehnderModulator",
+    "NRZDriver",
+    "PINPhotodiode",
+    "PRBSGenerator",
+    "PowerMeter",
+]

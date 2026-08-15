@@ -17,12 +17,13 @@ goes through it: if a feature is not reachable from here, it does not exist.
 
 from __future__ import annotations
 
-from .component import Component, Param, Port, PortType
+from .component import BoolParam, Component, Param, Port, PortType
 from .context import SimulationContext
 from .graph import CycleError, Graph, GraphError, Results
 from .signals import (
     Band,
     BandPower,
+    BinarySignal,
     ElectricalSignal,
     NoiseBin,
     OpticalSignal,
@@ -34,6 +35,8 @@ __version__ = "0.0.1.dev0"
 __all__ = [
     "Band",
     "BandPower",
+    "BinarySignal",
+    "BoolParam",
     "Component",
     "CycleError",
     "ElectricalSignal",

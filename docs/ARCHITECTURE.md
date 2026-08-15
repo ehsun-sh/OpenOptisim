@@ -186,15 +186,15 @@ spanning 4 THz cannot be represented that way without sampling the entire band �
 rewriting the core type and every block that touches it.
 
 ```python
-@dataclass
+@dataclass(frozen=True)
 class Band:
     """One sampled band: complex envelope in two orthogonal polarizations (Jones vector)."""
-    Ex: np.ndarray            # complex64/128, shape (N,)
-    Ey: np.ndarray            # complex64/128, shape (N,)
-    f0: float                 # band center frequency [Hz]
+    Ex: np.ndarray            # complex64/128, shape (N,), read-only
+    Ey: np.ndarray            # complex64/128, shape (N,), read-only
+    f0: float                 # band centre frequency [Hz]
     fs: float                 # band sample rate [Hz] — usually context.sample_rate
 
-@dataclass
+@dataclass(frozen=True)
 class NoiseBin:
     """Spectrally-resolved noise carried separately from the sampled bands.
 
@@ -206,11 +206,15 @@ class NoiseBin:
     psd_x: float              # PSD per polarization [W/Hz]
     psd_y: float
 
-@dataclass
+@dataclass(frozen=True)
 class OpticalSignal:
-    bands: list[Band]
-    noise: list[NoiseBin]
+    bands: tuple[Band, ...]
+    noise: tuple[NoiseBin, ...]
 ```
+
+Fields are in units of sqrt(W), so instantaneous power is `|Ex|**2 + |Ey|**2`. The containers
+are tuples and the arrays are read-only: §3.4's immutability rule has to be enforced by the
+type, not merely documented, or the buffer sharing it enables is unsafe.
 
 Rules the engine enforces:
 

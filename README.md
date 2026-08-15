@@ -12,12 +12,12 @@
 > ### ⚠️ Project status: pre-alpha, Phase 0
 >
 > The engine core exists and is tested: simulation context, multi-band optical signal model,
-> typed ports, component/parameter system, and the block-mode scheduler. Implemented components:
-> CW laser, Gaussian pulse source, fiber (attenuation + chromatic dispersion), combiner,
-> attenuator, power meter — with the physics validated against closed-form results in CI.
+> typed ports, component/parameter system, and the block-mode scheduler. The transmitter-to-receiver
+> chain runs end to end — PRBS → NRZ driver → CW laser → MZM → fiber (loss + dispersion) → PIN —
+> with every physics block validated against closed-form results in CI.
 >
-> **Not implemented yet:** modulators, photodetectors, SSFM/nonlinearity, PMD, amplifiers, DSP,
-> BER/eye analysis, and the GUI. Those are Phases 1–2; see the [roadmap](#roadmap).
+> **Not implemented yet:** eye/BER analysis, SSFM/nonlinearity, PMD, amplifiers, equalisers,
+> coherent detection, and the GUI. See the [roadmap](#roadmap).
 >
 > This is not yet a useful simulator. It is a foundation with the expensive decisions made and
 > tested. Criticism of those decisions is worth more right now than any feature —
@@ -199,7 +199,7 @@ time window, and results are reproducible.
 | Phase | Scope | Estimate¹ |
 | :--- | :--- | :--- |
 | **0 — Foundations** *(in progress)* | ✅ Signal model, context, port types, component base, scheduler, CI · ⬜ project file format, sweeps | ~1 month |
-| **1 — MVP: linear link** | PRBS → NRZ → CW laser → MZM → fiber (α + CD) → PIN → eye/BER. **Python only, no GUI.** Full analytical validation suite. | ~2–3 months |
+| **1 — MVP: linear link** *(in progress)* | ✅ PRBS → NRZ → CW laser → MZM → fiber (α + CD) → PIN · ⬜ eye diagram, Q-factor, BER. **Python only, no GUI.** | ~2–3 months |
 | **1.5 — Nonlinear & amplified** | Adaptive-step SSFM, Kerr, PMD, EDFA (gain/NF/saturation/ASE), APD | ~2 months |
 | **2 — GUI & DSP** | Graph editor, plots, pulse shaping, FIR, equalizers (LMS/CMA), OSA, constellation, sweeps | ~3–4 months |
 | **3 — Coherent & WDM** | IQ mod, M-QAM, LO, 90° hybrid, balanced detection, coherent DSP, DWDM + crosstalk, 400G/800G references, CuPy back-end | ~6 months |
@@ -226,10 +226,11 @@ Every physics block ships with a test against a closed-form result, run in CI
 | Chirped Gaussian | `T₁/T₀ = √((1 + Cβ₂z/T₀²)² + (β₂z/T₀²)²)` — pins the sign of β₂ | ✅ |
 | Dispersion compensation | `+D` then `−D` restores the input sample-for-sample | ✅ |
 | GVD | Energy conserved (Parseval); β₂ = −Dλ²/2πc per band | ✅ |
+| PRBS | Period `2ⁿ−1`; `2ⁿ⁻¹` marks; every n-bit window appears once | ✅ |
+| Ideal push-pull MZM | `P_out/P_in = cos²(πV / 2V_π)`; null depth equals the declared ER | ✅ |
+| PIN detector | `I = R·P`; shot `σ² = 2qIB`; thermal `σ² = 4kTB/R_L` | ✅ |
 | Lossless SSFM | Energy conserved with nonlinearity | ⬜ |
 | Fundamental soliton (N=1) | Envelope magnitude invariant along propagation | ⬜ |
-| Ideal push-pull MZM | `P_out/P_in = cos²(πV / 2V_π)` | ⬜ |
-| PIN detector | `I = R·P`; shot `σ² = 2qIB`; thermal `σ² = 4kTB/R_L` | ⬜ |
 | Ideal OOK, Gaussian noise | `BER = ½·erfc(Q/√2)` | ⬜ |
 | EDFA | `P_ASE = 2·n_sp·hν·(G−1)·B_o` | ⬜ |
 

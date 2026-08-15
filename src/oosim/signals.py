@@ -186,17 +186,71 @@ class OpticalSignal:
 
 @dataclass(frozen=True)
 class ElectricalSignal:
-    """A real-valued electrical waveform [V or A, by context]."""
+    """A real-valued electrical waveform.
+
+    ``unit`` records what the samples physically are — volts out of a driver,
+    amperes out of a photodiode. It is carried rather than assumed so that a
+    block receiving a waveform can tell whether it is being handed the right
+    quantity, and so plots can label their axes without guessing.
+    """
 
     samples: np.ndarray
     fs: float
+    unit: str = "V"
 
     def __post_init__(self) -> None:
         if self.samples.ndim != 1:
             raise ValueError(f"samples must be 1-D, got {self.samples.ndim}-D")
+        if np.issubdtype(self.samples.dtype, np.complexfloating):
+            raise TypeError("an electrical waveform is real-valued, got a complex array")
         if self.fs <= 0:
             raise ValueError(f"fs must be positive, got {self.fs}")
         object.__setattr__(self, "samples", freeze(self.samples))
+
+    @property
+    def num_samples(self) -> int:
+        return int(self.samples.shape[0])
+
+    def mean(self) -> float:
+        return float(np.mean(self.samples.astype(np.float64)))
+
+    def variance(self) -> float:
+        return float(np.var(self.samples.astype(np.float64)))
+
+
+@dataclass(frozen=True)
+class BinarySignal:
+    """A sequence of bits, one per symbol.
+
+    Bits are stored unsampled — one entry per symbol, not per sample. Upsampling
+    to a waveform is a driver's job, and keeping the two apart means a receiver
+    can compare decided bits against transmitted ones without having to undo a
+    pulse shape first.
+    """
+
+    bits: np.ndarray
+    symbol_rate: float
+
+    def __post_init__(self) -> None:
+        if self.bits.ndim != 1:
+            raise ValueError(f"bits must be 1-D, got {self.bits.ndim}-D")
+        if self.bits.dtype != np.uint8:
+            raise TypeError(f"bits must be uint8 (0 or 1), got dtype {self.bits.dtype}")
+        if self.bits.size and int(self.bits.max()) > 1:
+            raise ValueError("bits must contain only 0 and 1")
+        if self.symbol_rate <= 0:
+            raise ValueError(f"symbol_rate must be positive, got {self.symbol_rate}")
+        object.__setattr__(self, "bits", freeze(self.bits))
+
+    @property
+    def num_bits(self) -> int:
+        return int(self.bits.shape[0])
+
+    def ones_fraction(self) -> float:
+        """Fraction of the sequence that is 1 — the mark density."""
+        if self.num_bits == 0:
+            return 0.0
+        return float(np.mean(self.bits.astype(np.float64)))
 
 
 @dataclass(frozen=True)

@@ -198,6 +198,45 @@ def test_si_conversion_uses_the_declared_unit() -> None:
     assert unit == "nm"
 
 
+def test_automatic_labels_depend_only_on_the_graph(ctx: SimulationContext) -> None:
+    """Two identically-built graphs must label their components identically.
+
+    A component's label seeds its random stream, so if labels came from a
+    process-global counter the same script would produce different noise on every
+    run and nothing stochastic could be regression-tested. Building the same
+    graph twice in one process is exactly the case that would break.
+    """
+    labels = []
+    for _ in range(2):
+        g = Graph(ctx)
+        g.add(CWLaser())
+        g.add(Fiber())
+        g.add(CWLaser())
+        labels.append([c.label for c in g.components])
+
+    assert labels[0] == labels[1] == ["CWLaser1", "Fiber1", "CWLaser2"]
+
+
+def test_identical_graphs_produce_identical_noise(ctx: SimulationContext) -> None:
+    """The end-to-end consequence of the label rule above."""
+    import numpy as np
+
+    def build_and_run() -> np.ndarray:
+        g = Graph(ctx)
+        laser = g.add(CWLaser(power=0.0, linewidth=1000.0))
+        meter = g.add(PowerMeter())
+        g.chain(laser, meter)
+        return np.asarray(g.run(keep=[laser]).port(laser, "out").bands[0].Ex)
+
+    np.testing.assert_array_equal(build_and_run(), build_and_run())
+
+
+def test_an_explicit_label_survives_being_added(ctx: SimulationContext) -> None:
+    g = Graph(ctx)
+    laser = g.add(CWLaser(label="tx_laser"))
+    assert laser.label == "tx_laser"
+
+
 def test_ports_are_per_instance_so_port_count_can_be_configured(
     ctx: SimulationContext,
 ) -> None:

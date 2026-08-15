@@ -88,7 +88,17 @@ class Graph:
         self._edges: dict[tuple[str, str], Port] = {}
 
     def add(self, component: C) -> C:
-        """Add a component and return it, so it can be assigned in one line."""
+        """Add a component and return it, so it can be assigned in one line.
+
+        Components without an explicit label get one derived from their class and
+        their position among components of that class in *this graph*. That makes
+        labels a function of the graph alone, which matters because a component's
+        label seeds its random stream: a process-global counter would make the
+        same script produce different noise on every run.
+        """
+        if not component.has_explicit_label:
+            same_kind = sum(1 for c in self._components if type(c) is type(component))
+            component.label = f"{type(component).__name__}{same_kind + 1}"
         if any(c.label == component.label for c in self._components):
             raise GraphError(f"duplicate component label {component.label!r}")
         self._components.append(component)

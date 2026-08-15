@@ -5,7 +5,6 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 from enum import Enum
-from itertools import count
 from typing import Any, ClassVar, overload
 
 from .context import SimulationContext
@@ -109,7 +108,40 @@ class Param:
         return d
 
 
-_instance_counter = count(1)
+class BoolParam(Param):
+    """A component parameter that is a flag rather than a quantity.
+
+    A separate class rather than a mode on :class:`Param` so that a float
+    parameter still types as ``float`` at every use site. Flags are read as plain
+    attributes; :meth:`Component.si` refuses them, because converting a switch to
+    an SI unit is meaningless and asking for it means something is confused.
+    """
+
+    def __init__(self, default: bool, *, doc: str = "") -> None:
+        super().__init__(0.0, doc=doc)
+        self.default = default
+
+    @overload
+    def __get__(self, obj: None, owner: type | None = None) -> BoolParam: ...
+
+    @overload
+    def __get__(self, obj: Component, owner: type | None = None) -> bool: ...
+
+    def __get__(self, obj: Component | None, owner: type | None = None) -> BoolParam | bool:
+        if obj is None:
+            return self
+        return bool(obj._values.get(self.name, self.default))
+
+    def validate(self, value: object) -> bool:
+        if not isinstance(value, bool):
+            raise TypeError(f"{self.name} must be True or False, got {value!r}")
+        return value
+
+    def to_dict(self) -> dict[str, Any]:
+        d: dict[str, Any] = {"type": "bool", "default": self.default}
+        if self.doc:
+            d["doc"] = self.doc
+        return d
 
 
 class Component:
@@ -135,7 +167,7 @@ class Component:
     inputs: dict[str, PortType] = {}
     outputs: dict[str, PortType] = {}
 
-    def __init__(self, *, label: str | None = None, **params: float) -> None:
+    def __init__(self, *, label: str | None = None, **params: float | bool) -> None:
         self.inputs = dict(type(self).inputs)
         self.outputs = dict(type(self).outputs)
         declared = self.param_specs()
@@ -145,10 +177,15 @@ class Component:
                 f"{type(self).__name__} has no parameter(s) {sorted(unknown)}; "
                 f"declared: {sorted(declared)}"
             )
-        self._values: dict[str, float] = {
+        self._values: dict[str, float | bool] = {
             name: declared[name].validate(value) for name, value in params.items()
         }
-        self.label = label or f"{type(self).__name__}{next(_instance_counter)}"
+
+        # A label identifies the component to the RNG, so it must depend only on
+        # the graph, never on how many components happened to be constructed
+        # earlier in the process. Graph.add() assigns the automatic form.
+        self.has_explicit_label = label is not None
+        self.label = label if label is not None else type(self).__name__
 
     # -- introspection ----------------------------------------------------
 
@@ -186,6 +223,8 @@ class Component:
         spec = self.param_specs().get(name)
         if spec is None:
             raise KeyError(f"{type(self).__name__} has no parameter {name!r}")
+        if isinstance(spec, BoolParam):
+            raise TypeError(f"{name} is a flag, not a quantity; read it as an attribute")
         return to_si(getattr(self, name), spec.unit)
 
     def display(self, name: str) -> tuple[float, str]:
