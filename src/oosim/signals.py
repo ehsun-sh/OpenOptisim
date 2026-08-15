@@ -293,5 +293,92 @@ class PowerReading:
         return f"PowerReading({self.power_dbm:.3f} dBm" + (f"; {per_band})" if per_band else ")")
 
 
+@dataclass(frozen=True)
+class EyeHistogram:
+    """A binned eye diagram — the reduced form of a waveform, not the waveform.
+
+    Rendering an eye means binning a few million samples into a picture. Doing
+    that binning here, in the engine, is what keeps raw sample buffers out of the
+    UI: ``counts`` is a fixed-size array whose size depends on the requested
+    resolution and not at all on how long the simulation ran.
+    """
+
+    counts: np.ndarray
+    """2-D histogram, shape (amplitude_bins, time_bins)."""
+
+    time_edges: np.ndarray
+    """Bin edges along the time axis [s], spanning ``span_symbols`` symbols."""
+
+    amplitude_edges: np.ndarray
+    """Bin edges along the amplitude axis, in the waveform's own unit."""
+
+    unit: str = ""
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "counts", freeze(self.counts))
+        object.__setattr__(self, "time_edges", freeze(self.time_edges))
+        object.__setattr__(self, "amplitude_edges", freeze(self.amplitude_edges))
+
+    @property
+    def shape(self) -> tuple[int, int]:
+        return (int(self.counts.shape[0]), int(self.counts.shape[1]))
+
+
+@dataclass(frozen=True)
+class EyeMeasurement:
+    """Decision-circuit measurements taken on a received waveform."""
+
+    q_factor: float
+    """(mu1 - mu0) / (sigma1 + sigma0) at the sampling instant."""
+
+    mean_one: float
+    mean_zero: float
+    std_one: float
+    std_zero: float
+
+    threshold: float
+    """Decision level used, chosen for equal error probability."""
+
+    sample_offset: int
+    """Samples into the symbol at which the decision was taken."""
+
+    bits_evaluated: int
+    errors: int
+
+    @property
+    def ber_gaussian(self) -> float:
+        """BER predicted from Q under the Gaussian-noise approximation."""
+        from .analysis import ber_from_q
+
+        return ber_from_q(self.q_factor)
+
+    @property
+    def ber_counted(self) -> float:
+        """BER measured by comparing decided bits against the transmitted ones.
+
+        Meaningful only when enough errors occurred to count: at a BER of 1e-9 a
+        window of ten thousand bits will show zero errors and report 0.0, which
+        is a statement about the window, not about the link.
+        """
+        if self.bits_evaluated == 0:
+            return 0.0
+        return self.errors / self.bits_evaluated
+
+    @property
+    def q_db(self) -> float:
+        """Q expressed in dB (20*log10 Q), as it is usually quoted."""
+        import math
+
+        if self.q_factor <= 0:
+            return -math.inf
+        return 20.0 * math.log10(self.q_factor)
+
+    def __repr__(self) -> str:
+        return (
+            f"EyeMeasurement(Q={self.q_factor:.3f}, BER={self.ber_gaussian:.3e}, "
+            f"counted={self.errors}/{self.bits_evaluated})"
+        )
+
+
 #: Anything that may travel along an edge of the graph.
 Signal = Any

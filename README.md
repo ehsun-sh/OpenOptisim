@@ -11,13 +11,12 @@
 
 > ### ⚠️ Project status: pre-alpha, Phase 0
 >
-> The engine core exists and is tested: simulation context, multi-band optical signal model,
-> typed ports, component/parameter system, and the block-mode scheduler. The transmitter-to-receiver
-> chain runs end to end — PRBS → NRZ driver → CW laser → MZM → fiber (loss + dispersion) → PIN —
-> with every physics block validated against closed-form results in CI.
+> A complete 10 Gb/s OOK link runs end to end and produces numbers that match theory:
+> PRBS → NRZ → CW laser → MZM → fiber (loss + dispersion) → PIN → filter → eye/Q/BER.
+> Every physics block is validated against a closed-form result in CI.
 >
-> **Not implemented yet:** eye/BER analysis, SSFM/nonlinearity, PMD, amplifiers, equalisers,
-> coherent detection, and the GUI. See the [roadmap](#roadmap).
+> **Not implemented yet:** SSFM/nonlinearity, PMD, amplifiers, equalisers, coherent detection,
+> WDM crosstalk, the project file format, and the GUI. See the [roadmap](#roadmap).
 >
 > This is not yet a useful simulator. It is a foundation with the expensive decisions made and
 > tested. Criticism of those decisions is worth more right now than any feature —
@@ -67,6 +66,30 @@ print(g.run()[meter])
 Each band carries its own centre frequency, so channel spacing never enters the sample rate.
 Put those two lasers 6 THz apart instead of 125 GHz and nothing about the run changes — which is
 exactly what a single-carrier signal model cannot do.
+
+## Results
+
+`python examples/ook_link.py` builds a 10 Gb/s OOK link and characterises it. Abridged output:
+
+```
+Receiver sensitivity (back to back)        Dispersion-limited reach (0 dBm launch)
+  launch      Q    BER (from Q)  counted     distance     Q    BER (from Q)
+  -22 dBm   1.59     5.61e-02    460/8184        0 km   94.75    0.00e+00
+  -20 dBm   2.51     6.09e-03     49/8184       40 km    9.26    1.03e-20
+  -19 dBm   3.15     8.17e-04      7/8184       60 km    6.48    4.63e-11
+  -16 dBm   6.25     2.11e-10   none counted    80 km    3.76    8.58e-05
+  -14 dBm   9.83     3.99e-23   none counted   120 km    0.63    2.65e-01
+```
+
+Two things are worth reading off that. **Sensitivity is −16 dBm** for a Q of 6 — the right figure
+for a PIN into a plain 50 Ω load. **Reach is ~62 km**, and it is set by dispersion, not by loss:
+with dispersion switched off the same 60 km span gives Q = 15.4 instead of 6.5. That is the
+textbook result for uncompensated 10 G NRZ on standard fiber.
+
+The two columns are also a cross-check on each other. 120 km of 0.2 dB/km is 24 dB, and launching
+0 dBm through it gives Q = 1.01 — the same Q as launching −24 dBm back to back. Modulator, fiber,
+detector, filter and analyzer all have to agree for that to hold; it is
+[a test](tests/test_ber.py), not a coincidence.
 
 ## What this is
 
@@ -199,7 +222,7 @@ time window, and results are reproducible.
 | Phase | Scope | Estimate¹ |
 | :--- | :--- | :--- |
 | **0 — Foundations** *(in progress)* | ✅ Signal model, context, port types, component base, scheduler, CI · ⬜ project file format, sweeps | ~1 month |
-| **1 — MVP: linear link** *(in progress)* | ✅ PRBS → NRZ → CW laser → MZM → fiber (α + CD) → PIN · ⬜ eye diagram, Q-factor, BER. **Python only, no GUI.** | ~2–3 months |
+| **1 — MVP: linear link** *(essentially done)* | ✅ PRBS → NRZ → laser → MZM → fiber (α + CD) → PIN → filter → eye/Q/BER, validated end to end. **Python only, no GUI.** | ~2–3 months |
 | **1.5 — Nonlinear & amplified** | Adaptive-step SSFM, Kerr, PMD, EDFA (gain/NF/saturation/ASE), APD | ~2 months |
 | **2 — GUI & DSP** | Graph editor, plots, pulse shaping, FIR, equalizers (LMS/CMA), OSA, constellation, sweeps | ~3–4 months |
 | **3 — Coherent & WDM** | IQ mod, M-QAM, LO, 90° hybrid, balanced detection, coherent DSP, DWDM + crosstalk, 400G/800G references, CuPy back-end | ~6 months |
@@ -229,9 +252,11 @@ Every physics block ships with a test against a closed-form result, run in CI
 | PRBS | Period `2ⁿ−1`; `2ⁿ⁻¹` marks; every n-bit window appears once | ✅ |
 | Ideal push-pull MZM | `P_out/P_in = cos²(πV / 2V_π)`; null depth equals the declared ER | ✅ |
 | PIN detector | `I = R·P`; shot `σ² = 2qIB`; thermal `σ² = 4kTB/R_L` | ✅ |
+| Receiver filter | 3 dB at `B`; noise bandwidth `B·√(π/4ln2)`; zero group delay | ✅ |
+| **BER** | `½·erfc(Q/√2)` matched against **directly counted errors**, 10⁻⁴–10⁻¹ | ✅ |
+| Link consistency | `L` km of span ≡ launching `α·L` dB lower, end to end | ✅ |
 | Lossless SSFM | Energy conserved with nonlinearity | ⬜ |
 | Fundamental soliton (N=1) | Envelope magnitude invariant along propagation | ⬜ |
-| Ideal OOK, Gaussian noise | `BER = ½·erfc(Q/√2)` | ⬜ |
 | EDFA | `P_ASE = 2·n_sp·hν·(G−1)·B_o` | ⬜ |
 
 Component models are derived from published literature and standards (Agrawal, *Nonlinear Fiber

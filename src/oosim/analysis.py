@@ -10,9 +10,11 @@ million raw samples; it receives what these functions return.
 
 from __future__ import annotations
 
+import math
+
 import numpy as np
 
-from .signals import Band
+from .signals import Band, EyeHistogram, EyeMeasurement
 
 
 def instantaneous_power(band: Band) -> np.ndarray:
@@ -48,3 +50,179 @@ def rms_time_width(band: Band) -> float:
 def peak_power(band: Band) -> float:
     """Highest instantaneous power in the window [W]."""
     return float(instantaneous_power(band).max())
+
+
+# --------------------------------------------------------------------------
+# Decision-circuit analysis
+# --------------------------------------------------------------------------
+
+
+def ber_from_q(q: float) -> float:
+    """Bit error rate for a Q-factor under Gaussian noise.
+
+    ``BER = 0.5 * erfc(Q / sqrt(2))``. Q = 6 gives 9.87e-10, the value behind
+    the industry's "Q of 6 is error-free" shorthand.
+
+    This is an approximation in exactly one respect: it assumes the decision
+    variable is Gaussian on both rails. That holds for thermal noise and for
+    shot noise at realistic photon counts, and stops holding for a strongly
+    amplified, ASE-dominated link — where the true distribution is
+    non-central chi-squared and this formula is optimistic.
+    """
+    if q <= 0.0:
+        return 0.5
+    return 0.5 * math.erfc(q / math.sqrt(2.0))
+
+
+def q_factor(mean_one: float, std_one: float, mean_zero: float, std_zero: float) -> float:
+    """``Q = (mu1 - mu0) / (sigma1 + sigma0)``."""
+    spread = std_one + std_zero
+    if spread <= 0.0:
+        return math.inf if mean_one > mean_zero else 0.0
+    return (mean_one - mean_zero) / spread
+
+
+def optimal_threshold(mean_one: float, std_one: float, mean_zero: float, std_zero: float) -> float:
+    """Decision level that equalises the two error probabilities.
+
+    ``V_th = (sigma0 * mu1 + sigma1 * mu0) / (sigma0 + sigma1)``. With unequal
+    rail noise this sits nearer the quieter rail, which is why a real receiver's
+    threshold is not simply the midpoint between the levels.
+    """
+    spread = std_one + std_zero
+    if spread <= 0.0:
+        return 0.5 * (mean_one + mean_zero)
+    return (std_zero * mean_one + std_one * mean_zero) / spread
+
+
+def rail_statistics(samples: np.ndarray, bits: np.ndarray) -> tuple[float, float, float, float]:
+    """Mean and standard deviation of the mark and space rails.
+
+    Returns ``(mean_one, std_one, mean_zero, std_zero)``.
+    """
+    marks = samples[bits.astype(bool)]
+    spaces = samples[~bits.astype(bool)]
+    if marks.size == 0 or spaces.size == 0:
+        raise ValueError(
+            "the reference sequence contains only one symbol value; a Q-factor needs both rails"
+        )
+    return (
+        float(marks.mean()),
+        float(marks.std()),
+        float(spaces.mean()),
+        float(spaces.std()),
+    )
+
+
+def measure_eye(
+    samples: np.ndarray,
+    bits: np.ndarray,
+    samples_per_symbol: int,
+    *,
+    sample_offset: int | None = None,
+    ignore_edges: int = 0,
+) -> EyeMeasurement:
+    """Take decision-circuit measurements on a received waveform.
+
+    ``sample_offset`` selects the instant within each symbol at which the
+    decision is made. Left as ``None`` it is chosen to maximise Q, which is what
+    a receiver's clock recovery converges to; a fixed offset can be passed to
+    study a mis-timed sampling instant.
+
+    ``ignore_edges`` drops that many symbols from each end of the window. The
+    filtering upstream is circular, so the first and last symbols carry a wrap
+    from the far end of the sequence and are not representative.
+    """
+    if samples_per_symbol < 1:
+        raise ValueError(f"samples_per_symbol must be >= 1, got {samples_per_symbol}")
+
+    num_symbols = bits.shape[0]
+    expected = num_symbols * samples_per_symbol
+    if samples.shape[0] != expected:
+        raise ValueError(
+            f"waveform has {samples.shape[0]} samples but {num_symbols} bits at "
+            f"{samples_per_symbol} samples/symbol needs {expected}"
+        )
+
+    grid = samples.astype(np.float64).reshape(num_symbols, samples_per_symbol)
+    if ignore_edges > 0:
+        if 2 * ignore_edges >= num_symbols:
+            raise ValueError(
+                f"ignore_edges={ignore_edges} would discard the whole sequence "
+                f"of {num_symbols} symbols"
+            )
+        grid = grid[ignore_edges:-ignore_edges]
+        bits = bits[ignore_edges:-ignore_edges]
+
+    offsets = range(samples_per_symbol) if sample_offset is None else [sample_offset]
+    q = -math.inf
+    offset = 0
+    mean_one = std_one = mean_zero = std_zero = 0.0
+    for candidate in offsets:
+        if not 0 <= candidate < samples_per_symbol:
+            raise ValueError(f"sample_offset must be in [0, {samples_per_symbol}), got {candidate}")
+        stats = rail_statistics(grid[:, candidate], bits)
+        candidate_q = q_factor(*stats)
+        if candidate_q > q:
+            q, offset = candidate_q, candidate
+            mean_one, std_one, mean_zero, std_zero = stats
+
+    threshold = optimal_threshold(mean_one, std_one, mean_zero, std_zero)
+    decided = (grid[:, offset] > threshold).astype(np.uint8)
+    errors = int(np.count_nonzero(decided != bits))
+
+    return EyeMeasurement(
+        q_factor=q,
+        mean_one=mean_one,
+        mean_zero=mean_zero,
+        std_one=std_one,
+        std_zero=std_zero,
+        threshold=threshold,
+        sample_offset=offset,
+        bits_evaluated=int(bits.shape[0]),
+        errors=errors,
+    )
+
+
+def eye_histogram(
+    samples: np.ndarray,
+    samples_per_symbol: int,
+    symbol_rate: float,
+    *,
+    span_symbols: int = 2,
+    time_bins: int = 128,
+    amplitude_bins: int = 128,
+    unit: str = "",
+) -> EyeHistogram:
+    """Bin a waveform into an eye diagram.
+
+    The output size is set by ``time_bins`` and ``amplitude_bins`` alone. A run
+    with a million samples and one with ten million produce the same-sized
+    result, which is the point: this is where the data reduction happens, so the
+    UI never receives a raw sample buffer.
+    """
+    if span_symbols < 1:
+        raise ValueError(f"span_symbols must be >= 1, got {span_symbols}")
+
+    trace_length = span_symbols * samples_per_symbol
+    num_traces = samples.shape[0] // trace_length
+    if num_traces == 0:
+        raise ValueError(
+            f"waveform is shorter than one {span_symbols}-symbol trace "
+            f"({samples.shape[0]} < {trace_length} samples)"
+        )
+
+    traces = samples[: num_traces * trace_length].astype(np.float64).reshape(-1, trace_length)
+    time_within_trace = np.arange(trace_length) / (samples_per_symbol * symbol_rate)
+
+    counts, amplitude_edges, time_edges = np.histogram2d(
+        np.tile(traces.ravel(), 1),
+        np.tile(time_within_trace, num_traces),
+        bins=(amplitude_bins, time_bins),
+    )
+    return EyeHistogram(
+        counts=counts,
+        time_edges=time_edges,
+        amplitude_edges=amplitude_edges,
+        unit=unit,
+    )
