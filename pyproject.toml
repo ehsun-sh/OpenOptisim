@@ -59,7 +59,10 @@ select = ["E", "F", "W", "I", "N", "UP", "B", "SIM", "RUF"]
 "tests/**" = ["N802", "N803", "N806"]
 
 [tool.mypy]
-python_version = "3.11"
+# No python_version pin: mypy targets whichever interpreter runs it, so the CI
+# matrix type-checks against each supported version. Pinning it to the minimum
+# while running on a newer interpreter makes mypy reject dependency stubs that
+# use syntax from the newer version.
 files = ["src", "tests"]
 disallow_untyped_defs = true
 disallow_incomplete_defs = true
