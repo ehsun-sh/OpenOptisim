@@ -234,6 +234,13 @@ def eye_histogram(
     with a million samples and one with ten million produce the same-sized
     result, which is the point: this is where the data reduction happens, so the
     UI never receives a raw sample buffer.
+
+    Time resolution is capped at one column per sample. A trace holds exactly
+    ``span_symbols * samples_per_symbol`` samples, all landing on that many
+    distinct instants, so asking for more columns than that does not reveal more
+    detail — it interleaves empty columns between populated ones and renders as
+    vertical banding rather than an eye. Oversampling is what buys horizontal
+    resolution here, not the bin count.
     """
     if span_symbols < 1:
         raise ValueError(f"span_symbols must be >= 1, got {span_symbols}")
@@ -246,11 +253,13 @@ def eye_histogram(
             f"({samples.shape[0]} < {trace_length} samples)"
         )
 
+    time_bins = min(time_bins, trace_length)
+
     traces = samples[: num_traces * trace_length].astype(np.float64).reshape(-1, trace_length)
     time_within_trace = np.arange(trace_length) / (samples_per_symbol * symbol_rate)
 
     counts, amplitude_edges, time_edges = np.histogram2d(
-        np.tile(traces.ravel(), 1),
+        traces.ravel(),
         np.tile(time_within_trace, num_traces),
         bins=(amplitude_bins, time_bins),
     )

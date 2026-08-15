@@ -347,7 +347,7 @@ def test_eye_histogram_size_is_independent_of_the_simulation_length() -> None:
     for sequence_length in (512, 4096):
         g = Graph(
             SimulationContext(
-                bit_rate=10e9, samples_per_symbol=8, sequence_length=sequence_length, seed=1
+                bit_rate=10e9, samples_per_symbol=32, sequence_length=sequence_length, seed=1
             )
         )
         prbs = g.add(PRBSGenerator(order=15.0))
@@ -356,7 +356,29 @@ def test_eye_histogram_size_is_independent_of_the_simulation_length() -> None:
         g.chain(prbs, driver, eye)
         shapes.append(g.run()[eye].shape)
 
+    # 32 samples/symbol over a 2-symbol trace is 64 instants, so 64 columns are
+    # all resolvable and the cap does not bite here.
     assert shapes[0] == shapes[1] == (32, 64)
+
+
+def test_time_resolution_is_capped_at_one_column_per_sample() -> None:
+    """Asking for more columns than a trace has samples cannot reveal more detail.
+
+    A 2-symbol trace at 16 samples/symbol lands on 32 distinct instants. Spread
+    over 96 columns, two thirds come out empty and the eye renders as vertical
+    banding — which is what it did before this cap existed. Oversampling buys
+    horizontal resolution; the bin count does not.
+    """
+    samples = np.random.default_rng(0).normal(size=32 * 200)
+    histogram = eye_histogram(samples, 16, 10e9, span_symbols=2, time_bins=96)
+
+    assert histogram.shape[1] == 32
+    assert (histogram.counts.sum(axis=0) > 0).all(), "every column must carry samples"
+
+
+def test_a_smaller_time_bin_count_is_honoured() -> None:
+    samples = np.random.default_rng(0).normal(size=32 * 200)
+    assert eye_histogram(samples, 16, 10e9, span_symbols=2, time_bins=16).shape[1] == 16
 
 
 def test_eye_histogram_counts_every_sample_it_is_given() -> None:

@@ -1,0 +1,1119 @@
+<title>OpenOptiSim Studio</title>
+
+<!--
+THESIS: A schematic editor that shows an engineer the physics, not the chrome. It refuses the
+consumer-app arrangement — generous whitespace, big type, gentle motion — because this surface is
+used fifty times an hour beside a terminal.
+OWN-WORLD: Graphite ground (#0B0E13 → #171C24), hairline rules, and a spectral accent system where
+every port colour is a real wavelength: optical C-band cyan #22D3C5, electrical amber, binary
+slate, symbol violet, metric magenta. A wire's colour tells you what travels down it.
+STORY: The engineer recognises the layout instantly, finds the component, reads the parameters in
+their real units, runs, and reads Q off the eye.
+FIRST VIEWPORT: Menu, then action toolbar, then a three-column body — palette left, node canvas
+centre, inspector right — over a results dock carrying a real eye diagram. The primary action, Run,
+sits leftmost in the toolbar where the eye lands first.
+FORM: Instrument panel, derived from the audience's own world of spectrum analysers and EDA tools.
+Direction pinned by the project owner, not rolled.
+FINISH: unreviewed and undocumented is unfinished; this build ends with the finish review, the
+verdict, and DESIGN.md
+-->
+
+<style>
+  /* ---- Spectral tokens -------------------------------------------------
+     Committed dark. The use scene decides it: a long session beside a
+     terminal, often at night. Not a category default. */
+  :root {
+    color-scheme: dark;
+
+    --ground: #0b0e13;
+    --panel: #11151c;
+    --panel-2: #161b24;
+    --raised: #1c2330;
+    --rule: #232b38;
+    --rule-soft: #1a212b;
+
+    --ink: #e6ecf5;
+    --ink-2: #a8b4c6;
+    --ink-3: #8e9bb0;
+    --ink-4: #7a869b;
+
+    /* Port colours are wavelengths, not decoration. */
+    --optical: #22d3c5;
+    --electrical: #f0a030;
+    --binary: #7c86a0;
+    --symbol: #9b7cf6;
+    --metric: #e85d9b;
+
+    --accent: var(--optical);
+    --accent-dim: #14807a;
+    --accent-wash: rgba(34, 211, 197, 0.1);
+
+    --good: #46d17f;
+    --warn: #f0a030;
+    --bad: #ef5d6b;
+
+    --sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue",
+      Arial, sans-serif;
+    --mono: ui-monospace, "SF Mono", "Cascadia Mono", "Segoe UI Mono", "Roboto Mono",
+      Menlo, Consolas, monospace;
+
+    --menubar-h: 34px;
+    --toolbar-h: 40px;
+    --statusbar-h: 24px;
+
+    --shadow-panel: 0 8px 24px -6px rgba(0, 0, 0, 0.7), 0 2px 6px -2px rgba(0, 0, 0, 0.5);
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--ground);
+    color: var(--ink);
+    font-family: var(--sans);
+    font-size: 13px;
+    line-height: 1.45;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* Browser surfaces belong to the design too. */
+  ::selection { background: var(--accent-wash); color: #fff; }
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-track { background: var(--panel); }
+  ::-webkit-scrollbar-thumb {
+    background: #2b3442; border-radius: 5px; border: 2px solid var(--panel);
+  }
+  ::-webkit-scrollbar-thumb:hover { background: #3a4557; }
+  * { scrollbar-width: thin; scrollbar-color: #2b3442 var(--panel); }
+
+  :focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 1px;
+    border-radius: 3px;
+  }
+
+  .num { font-family: var(--mono); font-variant-numeric: tabular-nums; letter-spacing: -0.01em; }
+
+  /* ---- Shell ---------------------------------------------------------- */
+  .app {
+    height: 100vh;
+    min-height: 660px;
+    display: grid;
+    grid-template-rows: var(--menubar-h) var(--toolbar-h) minmax(0, 1fr) var(--statusbar-h);
+  }
+
+  /* ---- Menu bar ------------------------------------------------------- */
+  .menubar {
+    display: flex; align-items: center; gap: 2px;
+    padding: 0 10px;
+    background: var(--panel);
+    border-bottom: 1px solid var(--rule);
+  }
+  .brand {
+    display: flex; align-items: center; gap: 7px;
+    padding-right: 14px; margin-right: 6px;
+    border-right: 1px solid var(--rule);
+    height: 20px;
+  }
+  .brand-name { font-weight: 600; font-size: 12.5px; letter-spacing: 0.01em; }
+  .brand-name span { color: var(--ink-3); font-weight: 500; }
+  .menu-item {
+    appearance: none; background: none; border: 0; color: var(--ink-2);
+    font: inherit; font-size: 12.5px; padding: 4px 9px; border-radius: 4px; cursor: pointer;
+  }
+  .menu-item:hover { background: var(--raised); color: var(--ink); }
+  .menubar-right { margin-left: auto; display: flex; align-items: center; gap: 14px; }
+  .kernel {
+    display: flex; align-items: center; gap: 6px;
+    font-size: 11.5px; color: var(--ink-3);
+  }
+  .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--good); }
+  .dot.busy { background: var(--warn); }
+
+  /* ---- Toolbar -------------------------------------------------------- */
+  .toolbar {
+    display: flex; align-items: center; gap: 3px;
+    padding: 0 8px;
+    background: var(--panel-2);
+    border-bottom: 1px solid var(--rule);
+  }
+  .tb {
+    appearance: none; border: 0; background: none; color: var(--ink-2);
+    display: inline-flex; align-items: center; gap: 6px;
+    height: 26px; padding: 0 8px; border-radius: 4px;
+    font: inherit; font-size: 12px; cursor: pointer;
+  }
+  .tb:hover { background: var(--raised); color: var(--ink); }
+  .tb[aria-pressed="true"] { background: var(--raised); color: var(--ink); }
+  .tb:disabled { color: var(--ink-4); cursor: default; }
+  .tb:disabled:hover { background: none; color: var(--ink-4); }
+  .tb-run {
+    background: #189c93; color: #06201e; font-weight: 600;
+    padding: 0 11px;
+  }
+  .tb-run:hover { background: #1cb3a8; color: #06201e; }
+  .tb-sep { width: 1px; height: 18px; background: var(--rule); margin: 0 6px; }
+  .toolbar-right {
+    margin-left: auto; display: flex; align-items: center; gap: 12px;
+    font-size: 11.5px; color: var(--ink-3);
+  }
+  .zoom { display: flex; align-items: center; gap: 2px; }
+  .zoom-val { min-width: 40px; text-align: center; font-size: 11.5px; color: var(--ink-2); }
+
+  /* ---- Body ----------------------------------------------------------- */
+  .body {
+    display: grid;
+    grid-template-columns: 216px minmax(0, 1fr) 260px;
+    /* The editing row absorbs the leftover height and the dock takes its own;
+       without this the panels size to content and the window ends short. */
+    grid-template-rows: minmax(0, 1fr) auto;
+    min-height: 0;
+  }
+  .col { min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+  .panel-head {
+    display: flex; align-items: center; gap: 8px;
+    height: 28px; padding: 0 10px; flex: none;
+    background: var(--panel-2);
+    border-bottom: 1px solid var(--rule);
+    font-size: 10.5px; font-weight: 600;
+    letter-spacing: 0.07em; text-transform: uppercase; color: var(--ink-3);
+  }
+  .panel-head .count { margin-left: auto; font-weight: 500; letter-spacing: 0; }
+
+  /* ---- Palette -------------------------------------------------------- */
+  .palette { background: var(--panel); border-right: 1px solid var(--rule); }
+  .search-wrap { padding: 7px 8px; flex: none; border-bottom: 1px solid var(--rule-soft); }
+  .search {
+    position: relative; display: flex; align-items: center;
+  }
+  .search svg { position: absolute; left: 7px; color: var(--ink-4); pointer-events: none; }
+  .search input {
+    width: 100%; height: 26px; padding: 0 8px 0 26px;
+    background: var(--ground); color: var(--ink);
+    border: 1px solid var(--rule); border-radius: 4px;
+    font: inherit; font-size: 12px;
+    caret-color: var(--accent);
+  }
+  .search input::placeholder { color: var(--ink-4); }
+  .search input:focus { border-color: var(--accent-dim); outline: none; }
+  .search input:focus-visible { outline: none; }
+
+  .palette-scroll { overflow-y: auto; flex: 1; padding-bottom: 8px; }
+  .cat { margin-top: 2px; }
+  .cat-head {
+    display: flex; align-items: center; gap: 6px; width: 100%;
+    padding: 6px 9px 4px; background: none; border: 0;
+    color: var(--ink-3); font: inherit; font-size: 10.5px; font-weight: 600;
+    letter-spacing: 0.06em; text-transform: uppercase; cursor: pointer; text-align: left;
+  }
+  .cat-head:hover { color: var(--ink-2); }
+  .cat-head svg { transition: transform 140ms cubic-bezier(0.2, 0.9, 0.3, 1); }
+  .cat[data-collapsed="true"] .cat-head svg { transform: rotate(-90deg); }
+  .cat[data-collapsed="true"] .cat-items { display: none; }
+
+  .comp {
+    display: flex; align-items: center; gap: 8px; width: 100%;
+    padding: 5px 10px 5px 12px; border: 0; background: none;
+    color: var(--ink-2); font: inherit; font-size: 12.5px;
+    cursor: grab; text-align: left;
+    border-left: 2px solid transparent;
+  }
+  .comp:hover { background: var(--raised); color: var(--ink); }
+  .comp .swatch { width: 3px; height: 14px; border-radius: 2px; flex: none; }
+  .comp .nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .empty-hint { padding: 18px 12px; color: var(--ink-4); font-size: 12px; text-align: center; }
+
+  /* ---- Canvas --------------------------------------------------------- */
+  .canvas-col { background: var(--ground); }
+  .canvas-wrap { position: relative; flex: 1; min-height: 0; overflow: hidden; }
+  .canvas-grid {
+    position: absolute; inset: 0;
+    background-image:
+      radial-gradient(circle at 1px 1px, #1b2230 1px, transparent 0);
+    background-size: 22px 22px;
+  }
+  #graph { position: absolute; inset: 0; width: 100%; height: 100%; }
+
+  .node-box { fill: var(--panel-2); stroke: var(--rule); stroke-width: 1; }
+  .node-g { cursor: pointer; }
+  .node-g:hover .node-box { stroke: #38455a; }
+  .node-g.selected .node-box { stroke: var(--accent); }
+  .node-g.selected .node-halo { opacity: 1; }
+  .node-halo {
+    fill: none; stroke: var(--accent); stroke-width: 1; opacity: 0;
+    transition: opacity 120ms linear;
+  }
+  .node-strip { }
+  .node-label {
+    fill: var(--ink); font-family: var(--sans); font-size: 11.5px; font-weight: 550;
+  }
+  .node-sub {
+    fill: var(--ink-3); font-family: var(--mono); font-size: 10px;
+  }
+  .port { stroke: var(--panel-2); stroke-width: 1.5; }
+  .wire { fill: none; stroke-width: 1.75; opacity: 0.85; }
+  .wire-flow {
+    fill: none; stroke-width: 1.75; stroke-dasharray: 5 9; opacity: 0;
+  }
+  .running .wire-flow { opacity: 0.95; animation: flow 700ms linear infinite; }
+  @keyframes flow { to { stroke-dashoffset: -14; } }
+
+  .canvas-badge {
+    position: absolute; left: 12px; bottom: 10px;
+    display: flex; gap: 10px; align-items: center;
+    padding: 5px 9px; border-radius: 5px;
+    background: rgba(17, 21, 28, 0.9); border: 1px solid var(--rule);
+    font-size: 11px; color: var(--ink-3);
+  }
+  .legend { display: flex; align-items: center; gap: 5px; }
+  .legend i { width: 8px; height: 2px; border-radius: 1px; display: block; }
+
+  /* ---- Inspector ------------------------------------------------------ */
+  .inspector { background: var(--panel); border-left: 1px solid var(--rule); }
+  .insp-scroll { overflow-y: auto; flex: 1; }
+  .insp-title {
+    padding: 11px 12px 9px;
+    border-bottom: 1px solid var(--rule-soft);
+  }
+  .insp-title h2 { margin: 0; font-size: 14px; font-weight: 600; letter-spacing: -0.01em; }
+  .insp-meta {
+    margin-top: 3px; display: flex; align-items: center; gap: 7px;
+    font-size: 11px; color: var(--ink-3);
+  }
+  .chip {
+    padding: 1px 5px; border-radius: 3px; background: var(--raised);
+    font-family: var(--mono); font-size: 10px; color: var(--ink-2);
+  }
+  .field { padding: 7px 12px; border-bottom: 1px solid var(--rule-soft); }
+  .field-row { display: flex; align-items: center; gap: 8px; }
+  .field label {
+    flex: 1; font-size: 12px; color: var(--ink-2); min-width: 0;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .field-input {
+    display: flex; align-items: center; width: 106px; flex: none;
+    background: var(--ground); border: 1px solid var(--rule); border-radius: 4px;
+    overflow: hidden;
+  }
+  .field-input:focus-within { border-color: var(--accent-dim); }
+  .field-input input {
+    width: 100%; min-width: 0; height: 24px; padding: 0 6px;
+    background: none; border: 0; color: var(--ink);
+    font-family: var(--mono); font-size: 11.5px; font-variant-numeric: tabular-nums;
+    text-align: right; caret-color: var(--accent);
+  }
+  .field-input input:focus { outline: none; }
+  .unit {
+    padding: 0 6px 0 3px; font-family: var(--mono); font-size: 10.5px;
+    color: var(--ink-4); flex: none; border-left: 1px solid var(--rule-soft);
+    line-height: 22px;
+  }
+  .unit:empty { display: none; }
+  .field-doc { margin-top: 3px; font-size: 11px; color: var(--ink-4); line-height: 1.4; }
+  .field-range { margin-top: 3px; font-family: var(--mono); font-size: 10px; color: var(--ink-4); }
+
+  .toggle {
+    appearance: none; width: 30px; height: 17px; flex: none;
+    background: var(--raised); border: 1px solid var(--rule); border-radius: 9px;
+    position: relative; cursor: pointer; transition: background 130ms linear;
+  }
+  .toggle::after {
+    content: ""; position: absolute; top: 2px; left: 2px;
+    width: 11px; height: 11px; border-radius: 50%; background: var(--ink-3);
+    transition: transform 130ms cubic-bezier(0.2, 0.9, 0.3, 1), background 130ms linear;
+  }
+  .toggle:checked { background: var(--accent-dim); border-color: var(--accent-dim); }
+  .toggle:checked::after { transform: translateX(13px); background: #06201e; }
+
+  .insp-empty { padding: 40px 20px; text-align: center; color: var(--ink-4); font-size: 12px; }
+
+  /* ---- Results dock --------------------------------------------------- */
+  .dock {
+    grid-column: 1 / -1;
+    background: var(--panel);
+    border-top: 1px solid var(--rule);
+    display: flex; flex-direction: column;
+    height: 258px;
+  }
+  .dock-head { display: flex; align-items: stretch; height: 30px; flex: none;
+    background: var(--panel-2); border-bottom: 1px solid var(--rule); }
+  .tab {
+    appearance: none; border: 0; background: none; color: var(--ink-3);
+    font: inherit; font-size: 12px; padding: 0 13px; cursor: pointer;
+    border-bottom: 2px solid transparent; margin-bottom: -1px;
+  }
+  .tab:hover { color: var(--ink-2); }
+  .tab[aria-selected="true"] { color: var(--ink); border-bottom-color: var(--accent); }
+  .dock-metrics {
+    margin-left: auto; display: flex; align-items: center; gap: 0; padding-right: 4px;
+  }
+  .metric {
+    display: flex; align-items: baseline; gap: 6px; padding: 0 12px;
+    border-left: 1px solid var(--rule-soft); height: 18px;
+  }
+  .metric .k { font-size: 10.5px; color: var(--ink-4); letter-spacing: 0.04em; }
+  .metric .v {
+    font-family: var(--mono); font-size: 12.5px; font-variant-numeric: tabular-nums;
+    color: var(--ink);
+  }
+  .metric .v.pass { color: var(--good); }
+
+  .dock-body { flex: 1; min-height: 0; display: flex; }
+  .pane { display: none; flex: 1; min-width: 0; }
+  .pane[data-active="true"] { display: flex; }
+
+  .plot-wrap { position: relative; flex: 1; min-width: 0; padding: 10px 12px; }
+  .plot-wrap canvas { display: block; width: 100%; height: 100%; }
+  .plot-side {
+    width: 208px; flex: none; border-left: 1px solid var(--rule-soft);
+    padding: 10px 12px; overflow-y: auto;
+  }
+  .stat { display: flex; justify-content: space-between; gap: 10px; padding: 3px 0; font-size: 11.5px; }
+  .stat dt { color: var(--ink-3); }
+  .stat dd {
+    margin: 0; font-family: var(--mono); font-variant-numeric: tabular-nums; color: var(--ink-2);
+  }
+  .side-title {
+    font-size: 10.5px; font-weight: 600; letter-spacing: 0.07em; text-transform: uppercase;
+    color: var(--ink-4); margin: 0 0 6px;
+  }
+  .side-title + .side-title { margin-top: 14px; }
+
+  .log { flex: 1; overflow-y: auto; padding: 8px 12px; font-family: var(--mono); font-size: 11.5px; }
+  .log-line { display: flex; gap: 10px; padding: 1.5px 0; }
+  .log-t { color: var(--ink-4); flex: none; }
+  .log-m { color: var(--ink-2); }
+  .log-m.ok { color: var(--good); }
+  .log-m.warn { color: var(--warn); }
+
+  /* ---- Status bar ----------------------------------------------------- */
+  .statusbar {
+    display: flex; align-items: center; gap: 0;
+    background: var(--panel-2); border-top: 1px solid var(--rule);
+    padding: 0 10px; font-size: 11px; color: var(--ink-3);
+  }
+  .statusbar .seg { padding: 0 10px; border-right: 1px solid var(--rule-soft); }
+  .statusbar .seg:first-child { padding-left: 0; }
+  .statusbar .right { margin-left: auto; display: flex; }
+  .statusbar .right .seg { border-right: 0; border-left: 1px solid var(--rule-soft); }
+
+  .narrow-note {
+    display: none; padding: 14px 16px; color: var(--ink-3); font-size: 12.5px;
+    background: var(--panel); border-bottom: 1px solid var(--rule); line-height: 1.5;
+  }
+
+  @media (max-width: 1180px) {
+    .body { grid-template-columns: 190px minmax(0, 1fr) 240px; }
+  }
+  @media (max-width: 940px) {
+    .body { grid-template-columns: minmax(0, 1fr); }
+    .palette, .inspector { display: none; }
+    .narrow-note { display: block; }
+    .dock { height: 220px; }
+  }
+</style>
+
+<div class="app">
+  <!-- ===== Menu bar ===== -->
+  <div class="menubar">
+    <div class="brand">
+      <svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+        <circle cx="8" cy="8" r="2.1" fill="#22d3c5"/>
+        <path d="M8 1.4v2.3M8 12.3v2.3M1.4 8h2.3M12.3 8h2.3" stroke="#22d3c5"
+              stroke-width="1.3" stroke-linecap="round" opacity=".75"/>
+        <path d="M3.4 3.4l1.6 1.6M11 11l1.6 1.6M12.6 3.4L11 5M5 11l-1.6 1.6" stroke="#22d3c5"
+              stroke-width="1.3" stroke-linecap="round" opacity=".4"/>
+      </svg>
+      <span class="brand-name">OpenOpti<span>Sim</span></span>
+    </div>
+    <button class="menu-item">File</button>
+    <button class="menu-item">Edit</button>
+    <button class="menu-item">Simulate</button>
+    <button class="menu-item">View</button>
+    <button class="menu-item">Help</button>
+    <div class="menubar-right">
+      <div class="kernel"><span class="dot" id="kernel-dot"></span><span id="kernel-text">engine ready</span></div>
+      <span class="num" style="color:var(--ink-4)">ook_link.oosim</span>
+    </div>
+  </div>
+
+  <!-- ===== Action toolbar ===== -->
+  <div class="toolbar">
+    <button class="tb tb-run" id="run-btn">
+      <svg width="11" height="11" viewBox="0 0 12 12" fill="currentColor" aria-hidden="true">
+        <path d="M2.5 1.6v8.8L10 6z"/>
+      </svg>
+      Run
+    </button>
+    <button class="tb" id="stop-btn" disabled>
+      <svg width="11" height="11" viewBox="0 0 12 12" fill="currentColor" aria-hidden="true">
+        <rect x="2.6" y="2.6" width="6.8" height="6.8" rx="1"/>
+      </svg>
+      Stop
+    </button>
+    <button class="tb">
+      <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor"
+           stroke-width="1.4" stroke-linecap="round" aria-hidden="true">
+        <path d="M2 12.5h3.2L8 3.5l2.8 9H14"/>
+      </svg>
+      Sweep
+    </button>
+    <span class="tb-sep"></span>
+    <button class="tb" aria-pressed="true" title="Select">
+      <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor"
+           stroke-width="1.4" stroke-linejoin="round" aria-hidden="true">
+        <path d="M3.5 2.2l9 4.6-4 1.2-1.2 4z"/>
+      </svg>
+    </button>
+    <button class="tb" title="Pan">
+      <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor"
+           stroke-width="1.4" stroke-linecap="round" aria-hidden="true">
+        <path d="M8 2v12M2 8h12M8 2L6 4M8 2l2 2M8 14l-2-2M8 14l2-2M2 8l2-2M2 8l2 2M14 8l-2-2M14 8l-2 2"/>
+      </svg>
+    </button>
+    <button class="tb" title="Align selected">
+      <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor"
+           stroke-width="1.4" stroke-linecap="round" aria-hidden="true">
+        <path d="M2 4.5h12M2 8h8M2 11.5h12"/>
+      </svg>
+    </button>
+    <span class="tb-sep"></span>
+    <div class="zoom">
+      <button class="tb" id="zoom-out" title="Zoom out">
+        <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor"
+             stroke-width="1.4" stroke-linecap="round" aria-hidden="true">
+          <circle cx="7" cy="7" r="4.4"/><path d="M10.3 10.3L14 14M5 7h4"/>
+        </svg>
+      </button>
+      <span class="zoom-val num" id="zoom-val">100%</span>
+      <button class="tb" id="zoom-in" title="Zoom in">
+        <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor"
+             stroke-width="1.4" stroke-linecap="round" aria-hidden="true">
+          <circle cx="7" cy="7" r="4.4"/><path d="M10.3 10.3L14 14M5 7h4M7 5v4"/>
+        </svg>
+      </button>
+    </div>
+    <div class="toolbar-right">
+      <span class="num">10 GBd</span>
+      <span class="num">64 sa/sym</span>
+      <span class="num">2048 sym</span>
+      <span class="num">seed 2026</span>
+    </div>
+  </div>
+
+  <!-- ===== Body ===== -->
+  <div class="body">
+    <!-- Palette -->
+    <div class="col palette">
+      <div class="panel-head">Components <span class="count num" id="palette-count">18</span></div>
+      <div class="search-wrap">
+        <div class="search">
+          <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor"
+               stroke-width="1.5" stroke-linecap="round" aria-hidden="true">
+            <circle cx="6.8" cy="6.8" r="4.3"/><path d="M10 10l3.5 3.5"/>
+          </svg>
+          <input id="palette-search" type="search" placeholder="Search components"
+                 aria-label="Search components" autocomplete="off">
+        </div>
+      </div>
+      <div class="palette-scroll" id="palette-list"></div>
+    </div>
+
+    <!-- Canvas -->
+    <div class="col canvas-col">
+      <div class="narrow-note">
+        The palette and inspector collapse below 940&nbsp;px. This is a desktop tool — the
+        real build docks them as overlays at this width rather than dropping them.
+      </div>
+      <div class="canvas-wrap" id="canvas-wrap">
+        <div class="canvas-grid"></div>
+        <svg id="graph" viewBox="0 0 880 420" preserveAspectRatio="xMidYMid meet"
+             role="img" aria-label="Optical link schematic"></svg>
+        <div class="canvas-badge">
+          <span>Ports</span>
+          <span class="legend"><i style="background:var(--optical)"></i>optical</span>
+          <span class="legend"><i style="background:var(--electrical)"></i>electrical</span>
+          <span class="legend"><i style="background:var(--binary)"></i>binary</span>
+          <span class="legend"><i style="background:var(--metric)"></i>metric</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Inspector -->
+    <div class="col inspector">
+      <div class="panel-head">Properties</div>
+      <div class="insp-scroll" id="inspector"></div>
+    </div>
+
+    <!-- Results dock -->
+    <div class="dock">
+      <div class="dock-head" role="tablist">
+        <button class="tab" role="tab" aria-selected="true" data-pane="eye">Eye diagram</button>
+        <button class="tab" role="tab" aria-selected="false" data-pane="sens">Sensitivity</button>
+        <button class="tab" role="tab" aria-selected="false" data-pane="log">Log</button>
+        <div class="dock-metrics">
+          <div class="metric"><span class="k">Q</span><span class="v" id="m-q">—</span></div>
+          <div class="metric"><span class="k">Q dB</span><span class="v" id="m-qdb">—</span></div>
+          <div class="metric"><span class="k">BER</span><span class="v" id="m-ber">—</span></div>
+          <div class="metric"><span class="k">ERRORS</span><span class="v" id="m-err">—</span></div>
+        </div>
+      </div>
+      <div class="dock-body">
+        <div class="pane" data-pane="eye" data-active="true">
+          <div class="plot-wrap"><canvas id="eye-canvas"></canvas></div>
+          <div class="plot-side">
+            <p class="side-title">Decision</p>
+            <dl style="margin:0">
+              <div class="stat"><dt>Threshold</dt><dd id="s-thr">—</dd></div>
+              <div class="stat"><dt>Sample offset</dt><dd id="s-off">—</dd></div>
+              <div class="stat"><dt>Bits evaluated</dt><dd id="s-bits">—</dd></div>
+            </dl>
+            <p class="side-title">Rails</p>
+            <dl style="margin:0">
+              <div class="stat"><dt>μ₁</dt><dd id="s-m1">—</dd></div>
+              <div class="stat"><dt>σ₁</dt><dd id="s-s1">—</dd></div>
+              <div class="stat"><dt>μ₀</dt><dd id="s-m0">—</dd></div>
+              <div class="stat"><dt>σ₀</dt><dd id="s-s0">—</dd></div>
+            </dl>
+          </div>
+        </div>
+        <div class="pane" data-pane="sens">
+          <div class="plot-wrap"><canvas id="sens-canvas"></canvas></div>
+          <div class="plot-side">
+            <p class="side-title">Sweep</p>
+            <dl style="margin:0">
+              <div class="stat"><dt>Axis</dt><dd>laser.power</dd></div>
+              <div class="stat"><dt>Points</dt><dd id="s-pts">—</dd></div>
+              <div class="stat"><dt>Runs / point</dt><dd>1</dd></div>
+              <div class="stat"><dt>Q = 6 at</dt><dd id="s-sens">—</dd></div>
+            </dl>
+          </div>
+        </div>
+        <div class="pane" data-pane="log">
+          <div class="log" id="log"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== Status bar ===== -->
+  <div class="statusbar">
+    <span class="seg">8 blocks</span>
+    <span class="seg">7 links</span>
+    <span class="seg" id="sb-sel">CW Laser selected</span>
+    <div class="right">
+      <span class="seg num">131 072 samples</span>
+      <span class="seg num" id="sb-time">last run 0.41 s</span>
+      <span class="seg">complex64</span>
+    </div>
+  </div>
+</div>
+
+<script id="oosim-data" type="application/json">{"manifests":{"APDPhotodiode":{"name":"APD Photodiode","type":"APDPhotodiode","class":"oosim.components.detectors.APDPhotodiode","category":"Receivers","version":"0.1.0","parameters":{"responsivity":{"type":"float","default":0.8,"unit":"","min":0.0,"doc":"Responsivity R [A/W]"},"dark_current":{"type":"float","default":0.0,"unit":"","min":0.0,"doc":"Dark current [A]"},"load_resistance":{"type":"float","default":50.0,"unit":"","min":0.0,"doc":"Load resistance [ohm]"},"temperature":{"type":"float","default":300.0,"unit":"","min":0.0,"doc":"Receiver temperature [K]"},"shot_noise":{"type":"bool","default":true,"doc":"Add shot noise"},"thermal_noise":{"type":"bool","default":true,"doc":"Add thermal (Johnson) noise"},"gain":{"type":"float","default":10.0,"unit":"","min":1.0,"doc":"Avalanche multiplication factor M"},"ionization_ratio":{"type":"float","default":0.3,"unit":"","min":0.0,"max":1.0,"doc":"Ionisation coefficient ratio k; lower is quieter"}},"ports":{"inputs":{"in":"optical"},"outputs":{"out":"electrical"}}},"Attenuator":{"name":"Attenuator","type":"Attenuator","class":"oosim.components.passive.Attenuator","category":"Passive","version":"0.1.0","parameters":{"attenuation":{"type":"float","default":3.0,"unit":"dB","min":0.0,"doc":"Attenuation"}},"ports":{"inputs":{"in":"optical"},"outputs":{"out":"optical"}}},"BERAnalyzer":{"name":"BER Analyzer","type":"BERAnalyzer","class":"oosim.components.analyzers.BERAnalyzer","category":"Measurements","version":"0.1.0","parameters":{"ignore_edges":{"type":"float","default":4.0,"unit":"","min":0.0,"doc":"Symbols to discard at each end of the window (circular-filter wrap)"},"adaptive_timing":{"type":"bool","default":true,"doc":"Choose the sampling instant that maximises Q"},"sample_offset":{"type":"float","default":0.0,"unit":"","min":0.0,"doc":"Sampling instant within the symbol when timing is fixed"}},"ports":{"inputs":{"in":"electrical","reference":"binary"},"outputs":{"out":"metric"}}},"CWLaser":{"name":"CW Laser","type":"CWLaser","class":"oosim.components.sources.CWLaser","category":"Optical Sources","version":"0.1.0","parameters":{"power":{"type":"float","default":0.0,"unit":"dBm","doc":"Average output power"},"wavelength":{"type":"float","default":1550.0,"unit":"nm","min":1200.0,"max":1700.0,"doc":"Vacuum wavelength"},"linewidth":{"type":"float","default":0.0,"unit":"kHz","min":0.0,"doc":"Lorentzian FWHM linewidth; 0 disables phase noise"}},"ports":{"inputs":{},"outputs":{"out":"optical"}}},"Combiner":{"name":"Optical Combiner","type":"Combiner","class":"oosim.components.passive.Combiner","category":"Passive","version":"0.1.0","parameters":{"insertion_loss":{"type":"float","default":0.0,"unit":"dB","min":0.0,"doc":"Insertion loss applied to every input"}},"ports":{"inputs":{},"outputs":{"out":"optical"}}},"DCVoltage":{"name":"DC Voltage","type":"DCVoltage","class":"oosim.components.electrical.DCVoltage","category":"Electrical Sources","version":"0.1.0","parameters":{"voltage":{"type":"float","default":0.0,"unit":"V","doc":"Output voltage"}},"ports":{"inputs":{},"outputs":{"out":"electrical"}}},"EDFA":{"name":"EDFA","type":"EDFA","class":"oosim.components.amplifiers.EDFA","category":"Amplifiers","version":"0.1.0","parameters":{"gain":{"type":"float","default":20.0,"unit":"dB","min":0.0,"doc":"Small-signal power gain"},"noise_figure":{"type":"float","default":5.0,"unit":"dB","min":0.0,"doc":"Noise figure"},"max_output_power":{"type":"float","default":30.0,"unit":"dBm","doc":"Output power clamp; the gain is reduced to hold it"},"center_wavelength":{"type":"float","default":1550.0,"unit":"nm","min":1200.0,"max":1700.0,"doc":"Centre of the ASE band"},"bandwidth":{"type":"float","default":4.0,"unit":"THz","min":0.0,"doc":"Optical bandwidth over which ASE is emitted"}},"ports":{"inputs":{"in":"optical"},"outputs":{"out":"optical"}}},"ElectricalFilter":{"name":"Electrical Filter","type":"ElectricalFilter","class":"oosim.components.filters.ElectricalFilter","category":"Electrical","version":"0.1.0","parameters":{"bandwidth":{"type":"float","default":7.0,"unit":"GHz","min":0.0,"doc":"3 dB power bandwidth"}},"ports":{"inputs":{"in":"electrical"},"outputs":{"out":"electrical"}}},"EyeDiagram":{"name":"Eye Diagram","type":"EyeDiagram","class":"oosim.components.analyzers.EyeDiagram","category":"Measurements","version":"0.1.0","parameters":{"span_symbols":{"type":"float","default":2.0,"unit":"","min":1.0,"doc":"Symbols across the horizontal axis"},"time_bins":{"type":"float","default":128.0,"unit":"","min":8.0,"doc":"Horizontal resolution"},"amplitude_bins":{"type":"float","default":128.0,"unit":"","min":8.0,"doc":"Vertical resolution"}},"ports":{"inputs":{"in":"electrical"},"outputs":{"out":"metric"}}},"Fiber":{"name":"Optical Fiber","type":"Fiber","class":"oosim.components.fiber.Fiber","category":"Fiber","version":"0.1.0","parameters":{"length":{"type":"float","default":80.0,"unit":"km","min":0.0,"doc":"Fiber span length"},"attenuation":{"type":"float","default":0.2,"unit":"dB/km","min":0.0,"doc":"Attenuation coefficient"},"dispersion":{"type":"float","default":0.0,"unit":"ps/nm/km","doc":"Dispersion parameter D at the band wavelength (0 disables)"},"nonlinearity":{"type":"float","default":0.0,"unit":"1/W/km","min":0.0,"doc":"Kerr coefficient gamma (0 disables, and is exact)"},"max_nonlinear_phase":{"type":"float","default":0.005,"unit":"","min":1e-06,"doc":"Largest nonlinear phase rotation allowed per split-step [rad]"},"pmd_coefficient":{"type":"float","default":0.0,"unit":"ps/sqrt(km)","min":0.0,"doc":"PMD coefficient (0 disables)"},"pmd_sections":{"type":"float","default":60.0,"unit":"","min":1.0,"doc":"Waveplates used to build the PMD realisation"}},"ports":{"inputs":{"in":"optical"},"outputs":{"out":"optical","diagnostics":"metric"}}},"GaussianPulse":{"name":"Gaussian Pulse","type":"GaussianPulse","class":"oosim.components.sources.GaussianPulse","category":"Optical Sources","version":"0.1.0","parameters":{"peak_power":{"type":"float","default":0.0,"unit":"dBm","doc":"Peak power P0 (not average power)"},"width":{"type":"float","default":10.0,"unit":"ps","min":0.0,"doc":"T0, the 1/e intensity half-width"},"chirp":{"type":"float","default":0.0,"unit":"","doc":"Linear chirp parameter C; sign matters against beta2"},"wavelength":{"type":"float","default":1550.0,"unit":"nm","min":1200.0,"max":1700.0,"doc":"Vacuum wavelength"}},"ports":{"inputs":{},"outputs":{"out":"optical"}}},"MachZehnderModulator":{"name":"Mach-Zehnder Modulator","type":"MachZehnderModulator","class":"oosim.components.modulators.MachZehnderModulator","category":"Modulators","version":"0.1.0","parameters":{"v_pi":{"type":"float","default":4.0,"unit":"V","min":0.0,"doc":"Voltage for a pi phase shift (drive to null)"},"v_bias":{"type":"float","default":0.0,"unit":"V","doc":"DC bias added to the drive voltage"},"extinction_ratio":{"type":"float","default":30.0,"unit":"dB","min":0.0,"doc":"On/off power ratio"},"insertion_loss":{"type":"float","default":0.0,"unit":"dB","min":0.0,"doc":"Loss at peak transmission"}},"ports":{"inputs":{"optical_in":"optical","electrical_in":"electrical"},"outputs":{"out":"optical"}}},"NRZDriver":{"name":"NRZ Driver","type":"NRZDriver","class":"oosim.components.electrical.NRZDriver","category":"Electrical","version":"0.1.0","parameters":{"v_low":{"type":"float","default":0.0,"unit":"V","doc":"Voltage representing a 0"},"v_high":{"type":"float","default":1.0,"unit":"V","doc":"Voltage representing a 1"}},"ports":{"inputs":{"in":"binary"},"outputs":{"out":"electrical"}}},"OSNRMeter":{"name":"OSNR Meter","type":"OSNRMeter","class":"oosim.components.meters.OSNRMeter","category":"Measurements","version":"0.1.0","parameters":{"reference_bandwidth":{"type":"float","default":12.5,"unit":"GHz","min":0.0,"doc":"Reference bandwidth; 12.5 GHz is 0.1 nm at 1550 nm"}},"ports":{"inputs":{"in":"optical"},"outputs":{"out":"metric"}}},"PINPhotodiode":{"name":"PIN Photodiode","type":"PINPhotodiode","class":"oosim.components.detectors.PINPhotodiode","category":"Receivers","version":"0.1.0","parameters":{"responsivity":{"type":"float","default":0.8,"unit":"","min":0.0,"doc":"Responsivity R [A/W]"},"dark_current":{"type":"float","default":0.0,"unit":"","min":0.0,"doc":"Dark current [A]"},"load_resistance":{"type":"float","default":50.0,"unit":"","min":0.0,"doc":"Load resistance [ohm]"},"temperature":{"type":"float","default":300.0,"unit":"","min":0.0,"doc":"Receiver temperature [K]"},"shot_noise":{"type":"bool","default":true,"doc":"Add shot noise"},"thermal_noise":{"type":"bool","default":true,"doc":"Add thermal (Johnson) noise"}},"ports":{"inputs":{"in":"optical"},"outputs":{"out":"electrical"}}},"PRBSGenerator":{"name":"PRBS Generator","type":"PRBSGenerator","class":"oosim.components.electrical.PRBSGenerator","category":"Electrical Sources","version":"0.1.0","parameters":{"order":{"type":"float","default":7.0,"unit":"","min":7.0,"max":31.0,"doc":"LFSR order n; period is 2**n - 1"}},"ports":{"inputs":{},"outputs":{"out":"binary"}}},"PowerMeter":{"name":"Optical Power Meter","type":"PowerMeter","class":"oosim.components.meters.PowerMeter","category":"Measurements","version":"0.1.0","parameters":{},"ports":{"inputs":{"in":"optical"},"outputs":{"out":"metric"}}},"SechPulse":{"name":"Sech Pulse","type":"SechPulse","class":"oosim.components.sources.SechPulse","category":"Optical Sources","version":"0.1.0","parameters":{"peak_power":{"type":"float","default":0.0,"unit":"dBm","doc":"Peak power P0 (not average power)"},"width":{"type":"float","default":10.0,"unit":"ps","min":0.0,"doc":"T0, the soliton width parameter"},"wavelength":{"type":"float","default":1550.0,"unit":"nm","min":1200.0,"max":1700.0,"doc":"Vacuum wavelength"}},"ports":{"inputs":{},"outputs":{"out":"optical"}}}},"measurement":{"q_factor":5.596978741999271,"q_db":14.959073148140153,"ber":1.0905972015412293e-08,"errors":0,"bits":2040,"mean_one":2.168053349591607e-05,"mean_zero":1.286509118199884e-06,"std_one":1.8597416543726562e-06,"std_zero":1.7840142571302935e-06,"threshold":1.1271598990781757e-05,"sample_offset":32},"eye":{"counts":[[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,1,1,1,1,1,1,1,1,1,1,1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,1,1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,1,1,1,1,2,2,2,2,1,1,1,1,1,2,2,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,1,1,0,0,0,1,2,2,2,2,2,2,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,0,0,0,0,0,0,0,0,0,0,1,1,1,1,1,1,1,1,1,1,0,0,0,0,0,1,1,1,1,1,1,1,1,1,1,1,1,0,0,0,0],[0,0,0,0,0,0,0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,0,0,0,1,1,1,2,1,0,0,3,3,3,3,3,3,3,2,1,1,1,0,0,0,0,0,0,0,0,0,1,1,2,3,2,1,0,0,0,0,0,0,1,1,1,1,1,2,1,1,1,1,1,1,1,1,0,0,1,1,1,1,1,0,0,1,1,1,2,1,1,1,1,1,1,0,0,0,1,3,3,4,4,2,1,0,0,0,1,1,1,1,0,0,0,0,1,1,1,1],[3,4,3,2,2,2,2,1,1,1,1,1,1,1,2,2,3,4,4,3,4,3,2,4,3,2,2,2,1,2,2,0,0,1,0,3,3,2,0,0,0,0,0,1,2,4,5,7,7,6,6,5,5,4,4,4,3,2,3,3,3,2,2,4,4,3,2,2,2,2,1,1,1,1,1,0,2,2,2,2,2,2,2,1,2,3,3,3,2,2,3,6,6,5,5,4,1,1,1,1,1,2,2,4,4,4,4,4,3,2,1,3,4,5,4,4,3,1,0,0,1,2,2,2,2,1,1,2],[4,3,3,4,3,3,2,4,5,5,5,5,6,6,6,4,3,2,3,5,5,7,8,5,6,7,6,6,5,4,3,5,5,5,4,1,1,3,4,4,4,5,5,5,5,4,5,4,3,5,7,8,7,10,9,10,11,12,9,8,7,6,4,2,2,4,5,4,3,5,6,5,5,5,5,4,4,2,2,4,4,3,3,4,4,3,3,5,8,8,7,6,5,5,5,6,8,7,9,6,5,3,5,4,4,4,4,3,5,5,7,6,5,6,7,7,6,8,9,7,5,5,6,5,5,5,5,5],[6,7,10,8,9,9,10,10,7,9,9,9,8,7,6,10,10,10,10,8,6,3,2,3,4,4,4,4,6,7,7,11,11,9,10,9,9,9,10,10,9,7,6,6,6,7,6,6,7,7,5,6,8,6,7,7,7,6,6,7,6,7,11,10,9,8,6,6,7,4,4,8,8,8,8,9,7,10,10,8,8,9,8,10,12,10,11,9,8,5,3,2,3,3,4,5,5,6,5,11,12,13,9,10,11,11,10,11,12,14,13,13,12,11,9,7,8,6,7,9,12,12,8,8,7,8,8,6],[18,16,15,17,18,16,15,12,12,9,11,12,12,13,12,13,15,15,14,16,15,20,18,16,14,12,13,14,15,15,16,14,10,12,13,16,15,8,6,9,11,12,14,14,13,12,10,10,10,10,12,11,12,12,10,10,10,11,13,13,12,12,11,12,14,13,16,18,20,21,19,14,14,14,14,14,14,11,12,11,12,14,13,12,10,10,9,9,7,8,10,11,11,10,9,9,12,13,13,10,10,14,15,15,12,12,17,17,15,13,12,12,13,12,13,16,17,20,19,17,16,12,14,17,19,18,18,18],[21,21,20,18,16,14,14,17,18,19,18,19,19,18,21,19,17,18,19,18,16,14,17,18,18,25,24,21,20,18,17,14,20,18,18,17,17,25,27,23,23,23,20,17,18,18,19,17,16,16,16,15,13,14,16,14,15,16,15,15,18,21,25,22,16,18,18,20,16,17,18,20,20,18,18,17,16,19,20,20,16,13,14,11,11,10,11,11,13,18,17,17,18,19,22,20,19,18,16,17,19,12,15,20,24,25,19,14,13,15,13,14,15,18,21,21,23,23,24,28,25,29,30,26,23,22,22,19],[26,25,22,21,23,27,28,26,24,25,23,21,23,25,22,18,16,16,15,18,25,23,23,23,26,23,23,24,26,26,24,25,23,25,26,26,27,25,24,21,19,16,14,18,18,16,19,20,19,23,17,17,17,20,20,22,23,23,23,25,25,23,15,18,23,27,24,21,23,19,23,25,24,25,23,21,24,21,18,17,18,20,20,21,22,26,24,29,29,26,28,27,29,25,24,27,25,23,24,26,23,28,26,22,18,14,16,20,23,20,23,27,29,28,28,30,28,27,25,23,26,23,22,24,25,29,27,30],[24,26,28,31,30,27,26,28,32,28,26,27,22,21,20,26,30,33,33,29,28,31,27,28,27,25,25,28,29,32,33,33,33,30,28,28,29,26,27,30,30,33,35,30,27,32,27,24,26,22,23,25,24,18,17,17,15,14,14,14,15,17,21,25,27,24,27,25,24,27,24,23,19,20,19,22,21,24,24,25,25,25,28,30,29,31,31,31,34,30,32,32,30,35,30,30,32,29,28,24,25,24,26,22,23,27,24,24,22,29,29,27,27,26,25,25,26,24,25,24,24,28,27,25,24,21,23,23],[34,34,34,36,31,29,30,26,30,33,35,35,37,34,37,31,31,31,34,35,30,27,29,32,32,31,35,33,35,34,38,39,38,44,42,41,40,39,38,37,39,37,38,40,42,35,35,36,34,31,34,32,32,31,30,29,29,29,30,22,23,23,24,21,18,17,17,22,25,23,20,20,26,25,30,31,31,29,34,36,44,44,42,39,44,42,41,36,32,37,31,31,29,29,32,30,31,36,34,31,29,32,33,35,35,32,38,40,41,38,32,29,26,27,27,23,21,23,23,25,26,23,23,30,34,33,32,33],[23,21,23,17,25,30,30,34,26,27,26,26,32,37,37,41,36,32,26,26,38,41,45,39,37,38,38,41,41,42,42,44,47,48,48,49,49,53,48,52,51,51,55,51,48,49,48,44,43,43,36,37,29,32,30,29,26,22,23,32,29,28,22,22,23,22,20,19,18,21,26,27,25,28,27,33,33,38,38,40,35,38,38,43,37,38,40,44,41,43,43,45,45,52,51,55,49,47,51,53,55,55,46,45,45,48,44,48,41,37,43,43,40,33,28,31,31,29,24,26,30,27,28,25,22,23,24,23],[23,27,27,32,29,35,38,33,37,35,40,41,35,32,34,32,37,41,47,48,39,36,36,42,49,52,57,58,50,52,57,54,53,52,56,55,54,56,56,55,52,54,47,45,44,42,44,44,40,37,37,31,37,37,38,35,37,38,33,27,28,26,30,27,30,30,29,27,28,28,29,27,31,32,34,30,31,36,36,41,43,40,49,47,51,51,50,47,54,52,58,58,65,58,60,60,57,62,60,58,61,52,52,51,47,44,46,36,38,37,33,28,29,32,33,30,28,30,34,31,20,23,25,22,22,24,24,22],[26,24,26,26,28,22,19,24,29,37,36,31,34,36,40,41,43,41,40,45,47,51,56,59,57,60,57,57,63,63,58,54,56,51,44,47,49,47,49,46,43,37,40,41,38,36,36,35,35,32,38,39,40,34,29,30,29,30,29,31,27,29,28,31,30,28,28,26,24,28,29,32,30,29,29,33,39,37,38,34,40,45,41,45,49,54,54,55,58,61,61,57,54,57,54,50,59,59,55,57,51,57,66,62,63,58,51,47,47,44,42,49,49,46,41,36,32,26,22,19,23,25,25,24,27,25,25,27],[22,24,20,25,24,25,26,31,25,20,25,33,40,40,34,39,41,44,43,40,53,59,52,51,60,60,56,56,52,53,55,56,44,51,54,54,51,50,47,46,46,46,40,42,42,51,45,46,44,52,43,38,31,33,32,32,28,23,24,21,26,22,24,23,20,22,27,28,27,24,23,24,26,27,35,35,38,36,34,38,32,32,37,37,33,32,40,48,44,45,43,48,49,50,51,54,51,47,50,54,55,54,45,48,49,48,47,48,49,47,47,41,34,33,41,43,36,35,34,32,30,26,22,24,22,22,22,24],[16,10,17,15,16,18,23,19,24,27,32,33,32,39,40,43,42,45,58,64,50,46,51,53,42,38,39,37,37,33,33,43,53,51,52,43,43,43,45,42,45,48,53,54,51,43,43,40,44,34,40,40,41,34,38,34,27,30,26,26,17,17,14,14,16,16,15,17,22,23,25,23,31,38,30,30,28,30,30,35,38,41,39,46,53,52,52,47,50,51,52,51,51,49,50,45,47,47,46,37,37,36,40,35,39,46,46,49,50,47,48,40,40,43,26,25,37,38,33,29,27,20,16,13,12,13,13,11],[8,16,9,10,14,19,17,25,29,34,30,29,26,27,32,39,42,41,36,36,37,39,32,29,29,33,32,33,39,44,41,35,38,33,34,41,41,38,39,39,42,39,36,34,41,41,39,38,39,46,41,39,36,40,33,27,29,26,19,18,18,11,14,11,10,9,7,11,17,15,24,30,26,29,33,32,33,34,42,36,40,43,48,41,38,41,40,37,36,34,38,36,32,28,32,36,35,38,39,44,41,41,39,43,40,36,37,38,33,33,34,39,41,35,48,41,29,27,28,30,24,29,27,20,13,10,8,10],[11,8,14,18,14,18,27,25,25,24,24,30,33,36,40,39,36,37,35,33,36,32,40,38,41,35,41,37,34,28,27,24,22,22,21,18,19,25,24,28,22,23,26,25,21,26,33,38,34,26,28,35,35,27,32,31,25,20,22,13,16,20,11,10,9,12,18,21,17,24,20,23,30,28,26,33,40,37,38,40,44,41,32,35,34,31,27,29,27,26,23,24,29,33,29,23,24,26,28,29,36,36,39,39,41,38,34,31,33,35,35,34,31,33,26,31,35,32,26,24,22,16,16,24,19,12,11,10],[9,15,14,14,23,25,25,24,26,25,31,31,35,33,34,27,29,27,29,28,26,29,23,27,26,34,25,25,23,21,20,22,19,21,21,24,24,23,25,24,29,29,28,32,38,33,32,28,29,35,34,28,29,36,26,31,34,37,37,28,22,14,21,17,16,18,16,15,17,25,26,31,26,25,37,33,27,37,43,41,30,26,28,24,22,20,23,23,24,23,24,24,18,18,19,25,25,18,21,21,16,19,20,22,19,24,30,36,36,38,36,28,34,32,33,34,30,29,32,31,29,27,23,16,18,24,17,12],[23,22,21,25,27,24,21,23,26,35,31,35,33,32,25,24,23,24,20,20,23,20,24,21,20,11,14,15,16,17,16,15,15,14,14,14,15,15,18,22,22,23,25,26,20,19,18,21,23,27,26,29,27,26,31,28,32,24,19,32,26,26,15,14,17,17,17,18,25,26,26,19,23,31,25,28,39,29,18,19,27,26,23,23,27,27,23,21,20,20,19,18,21,18,18,16,15,16,13,13,15,13,10,12,13,14,14,13,12,17,18,29,27,28,27,23,23,30,34,34,31,28,31,21,19,16,22,25],[23,21,31,26,24,23,34,35,29,25,28,21,19,21,20,21,22,25,27,23,18,18,16,12,11,13,12,10,10,11,12,13,13,12,14,14,13,11,8,7,8,11,12,11,17,21,24,23,20,15,19,23,29,29,28,30,27,28,35,25,28,30,29,34,22,24,34,26,31,22,20,26,32,28,37,32,18,25,22,20,14,12,16,15,10,12,13,12,9,9,5,5,6,7,5,6,5,8,8,7,7,5,9,8,11,11,14,15,18,18,20,21,20,26,32,34,31,25,23,20,33,34,27,34,30,28,24,24],[42,41,32,31,36,34,23,25,30,27,24,21,24,20,23,22,23,13,8,7,11,8,6,8,6,4,4,6,6,6,9,7,7,8,7,7,7,7,5,3,3,4,5,6,5,8,9,14,18,21,18,18,19,17,27,29,27,35,26,33,33,33,42,32,43,33,31,39,24,25,35,37,34,35,22,22,22,15,14,14,14,16,11,10,9,6,5,5,7,6,8,9,6,4,5,4,4,2,2,4,5,5,4,5,2,4,3,2,4,4,6,10,15,17,16,17,28,27,25,24,21,26,30,28,34,34,37,31],[45,43,45,39,28,28,28,26,20,22,19,22,20,20,17,11,5,6,5,6,3,4,3,3,3,4,4,3,2,2,0,2,3,3,3,2,3,4,7,9,7,4,3,5,7,4,5,7,9,10,16,14,13,20,20,17,28,23,29,32,34,37,41,51,48,52,36,27,32,44,36,32,22,14,14,12,10,13,13,13,10,8,7,6,7,6,6,6,4,3,2,1,1,2,2,2,2,2,2,2,1,3,2,2,4,3,3,5,5,6,5,6,6,4,8,15,15,21,25,31,25,24,28,38,36,41,36,49],[47,43,41,41,36,34,26,23,23,20,19,14,9,5,3,6,5,6,6,4,2,1,1,0,0,0,0,2,2,1,1,1,1,1,1,2,2,2,1,1,2,5,5,3,3,4,3,3,5,8,9,12,12,8,10,18,16,23,29,35,44,49,42,48,53,47,40,46,47,29,24,17,16,18,15,15,16,12,10,8,8,7,7,7,4,3,1,0,0,0,0,0,0,0,0,0,0,1,1,1,2,2,3,2,3,4,5,4,5,4,5,3,4,6,6,5,9,12,16,20,24,26,30,28,44,39,53,50],[47,50,43,43,41,30,29,21,18,12,10,11,9,5,5,3,3,1,0,0,0,1,1,1,1,1,1,0,0,1,1,1,1,1,0,0,0,0,1,2,3,3,3,4,4,6,6,5,4,4,5,8,14,20,15,13,15,17,27,32,39,45,60,46,40,46,65,56,35,30,21,18,17,12,12,10,7,7,7,3,3,2,1,0,0,0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,2,2,2,3,1,1,0,0,0,1,2,3,3,4,6,5,4,6,9,13,20,23,33,38,37,54,56,53],[61,48,43,34,33,33,23,19,7,11,7,3,3,5,2,2,1,1,1,1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,1,1,1,1,1,0,0,0,0,0,0,0,1,2,3,1,0,1,2,5,11,14,12,22,21,32,40,49,46,61,63,58,51,46,43,29,31,20,9,11,10,10,7,3,3,3,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,0,0,0,1,1,1,1,1,1,1,2,2,1,0,2,4,3,6,7,16,31,32,37,49,47,52,55],[52,56,46,44,31,20,23,18,20,6,4,4,1,0,2,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,2,3,3,2,0,2,8,21,19,28,31,37,42,52,62,63,59,44,39,40,35,23,22,16,8,5,2,3,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,1,2,3,2,1,5,6,9,12,24,29,49,43,49,49,48],[42,46,54,34,29,32,23,18,12,8,3,1,1,1,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,2,0,1,3,6,8,12,23,32,37,38,36,45,38,46,56,54,41,32,34,26,21,24,8,3,1,0,2,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,1,4,3,8,9,22,17,32,26,42,49,42,46],[35,35,33,46,37,25,18,13,13,7,7,5,2,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,2,3,3,6,13,16,25,32,33,34,44,36,38,34,29,35,41,37,31,28,20,13,17,7,2,0,0,2,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,2,1,7,7,19,18,24,19,32,37,34,44,35],[32,26,26,28,38,34,22,18,11,15,9,5,5,2,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,1,1,2,2,7,12,12,23,26,23,27,42,33,28,27,24,22,28,30,39,34,28,22,17,14,12,5,2,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,1,0,0,0,2,2,4,7,16,19,20,28,33,34,22,23,20,35],[19,23,26,24,25,28,33,25,15,10,11,5,3,5,1,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,1,0,2,2,6,15,14,25,24,23,25,36,24,21,21,16,19,20,16,30,25,29,30,25,19,14,16,14,5,4,1,1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,1,2,2,9,13,17,18,31,28,36,28,24,18,17,16],[12,19,15,22,21,30,28,29,29,15,11,10,6,2,5,1,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,3,2,6,11,7,23,21,24,24,36,25,14,17,15,17,12,17,18,14,23,27,25,31,29,16,14,13,12,2,2,1,1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,2,3,2,7,14,13,19,28,23,36,26,16,14,17,19,8],[7,5,14,12,20,21,30,31,29,25,15,15,6,6,4,4,1,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,1,0,2,3,4,8,12,25,18,24,28,39,29,14,17,10,6,6,10,9,11,10,13,19,27,26,23,30,15,15,14,13,4,3,1,1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,3,3,7,15,9,23,25,31,34,24,13,14,18,13,4,10],[2,3,4,13,15,17,20,21,25,29,22,12,13,3,3,5,3,2,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,1,4,2,10,15,17,14,26,31,35,31,11,13,9,4,6,4,5,4,6,10,10,14,21,26,27,26,28,11,12,11,11,3,3,1,1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,3,2,3,16,10,24,26,34,27,30,15,17,17,10,5,5,3],[1,2,5,4,10,13,20,27,27,26,31,21,14,15,4,2,6,2,2,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,1,1,5,2,11,11,13,18,33,29,32,29,7,12,12,6,8,4,3,0,2,3,8,10,12,15,21,27,26,25,30,16,8,8,7,1,3,1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,2,1,3,15,9,22,23,31,23,36,14,14,14,10,5,4,3,0],[0,1,1,4,4,11,12,14,23,31,23,24,20,11,12,4,1,5,2,2,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,1,1,5,2,10,8,11,18,32,22,32,27,11,14,11,5,6,3,1,0,0,0,2,1,6,10,13,15,22,25,24,24,24,20,11,9,6,0,3,1,2,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,2,2,3,13,12,18,19,31,27,35,15,15,15,11,4,4,3,0,0],[2,1,1,2,5,4,9,18,17,22,31,30,20,21,12,8,5,2,5,1,2,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,1,3,2,6,8,13,21,24,26,30,29,17,13,9,6,5,3,0,1,1,1,0,0,2,2,6,9,14,13,19,29,24,22,20,15,12,11,6,0,3,2,2,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,2,2,4,13,14,14,12,30,31,25,21,11,18,9,4,3,2,0,1,2],[0,0,0,0,1,6,8,9,17,21,23,24,31,17,19,13,5,4,2,4,0,2,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,2,2,4,5,9,14,19,19,36,26,34,18,11,6,6,5,4,0,1,0,0,0,1,1,0,2,2,7,9,16,18,18,25,22,23,21,17,12,9,5,0,1,2,2,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,2,1,4,10,11,11,10,37,31,20,28,11,18,5,7,3,2,0,0,1,0],[0,0,0,0,0,0,4,9,11,12,22,28,23,29,22,19,13,4,2,3,5,0,1,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,2,2,5,4,9,14,14,15,37,23,30,13,10,7,9,4,4,0,0,0,0,0,0,0,0,1,0,1,2,8,12,17,20,19,27,20,21,18,14,12,8,4,1,1,2,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,2,8,14,14,9,32,28,22,26,12,16,4,7,2,2,0,1,1,0,0],[0,0,0,0,0,0,0,4,7,12,11,22,32,27,21,20,18,10,5,2,3,5,1,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,2,2,5,2,9,13,10,16,36,24,25,17,16,8,8,5,6,0,0,1,0,0,0,0,0,0,0,1,1,1,2,9,13,17,25,21,23,19,18,16,15,13,6,3,1,0,3,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,2,10,15,12,7,27,32,22,27,22,18,8,9,3,2,0,1,0,0,0,0],[0,0,0,0,0,0,0,0,6,11,14,15,20,28,25,19,18,20,8,6,2,3,5,2,0,0,1,0,0,0,0,0,0,0,0,0,0,0,1,0,1,2,4,1,9,12,13,19,28,28,23,21,16,10,7,4,6,0,0,1,0,0,0,0,0,0,0,0,0,1,2,1,0,5,12,11,21,28,23,18,17,16,10,15,5,3,2,0,3,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,2,1,9,13,9,6,25,28,25,27,19,14,7,6,4,2,0,1,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,2,12,12,18,24,34,25,21,16,15,6,7,0,3,3,2,0,0,1,0,0,0,0,0,0,0,0,0,1,0,1,3,2,2,9,14,13,12,23,32,21,26,21,13,7,5,8,1,1,1,0,0,0,0,0,0,0,0,0,0,0,0,2,3,5,7,16,15,15,31,23,19,16,16,10,12,4,4,2,0,3,1,0,0,0,0,0,0,0,0,0,0,0,0,0,2,0,9,12,9,8,20,27,27,25,18,21,9,7,5,1,1,1,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,3,2,13,12,18,20,29,23,20,20,15,5,6,0,3,3,2,0,0,0,0,0,0,0,0,0,0,0,0,1,3,1,4,4,14,11,12,24,36,20,23,16,11,5,5,9,1,0,0,1,1,1,1,0,0,0,0,0,0,0,0,0,0,2,3,6,9,18,23,15,28,23,17,17,16,14,12,4,4,2,0,2,1,1,0,0,0,0,0,0,0,0,0,0,2,0,8,11,8,8,15,29,22,29,17,25,7,6,5,2,2,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,4,5,14,15,18,27,22,20,21,20,9,7,4,2,3,4,1,0,1,0,0,0,0,0,0,0,1,1,2,1,6,6,15,9,14,20,31,18,22,18,15,9,7,5,2,1,1,2,1,1,1,1,3,2,0,0,0,0,0,0,0,0,0,1,2,6,9,14,22,22,26,19,19,15,16,11,10,4,4,1,1,0,0,1,0,0,0,0,1,1,1,0,2,0,7,13,7,9,16,24,23,30,20,23,9,6,5,3,2,0,0,0,0,0,0,0,0,0],[1,1,2,2,2,2,1,1,1,1,0,2,6,14,20,17,31,25,13,20,24,10,7,4,2,2,5,1,0,1,0,1,1,1,1,2,3,3,4,6,4,15,14,18,18,30,23,26,24,21,12,6,8,9,2,2,1,2,4,4,3,3,2,3,5,4,3,2,1,0,0,0,0,1,2,4,8,12,16,15,23,22,17,18,11,13,10,7,4,4,1,3,0,1,2,1,1,1,0,0,0,2,1,5,15,6,12,19,20,25,22,24,20,16,5,7,4,2,0,0,0,0,0,0,0,0,0,1],[5,5,3,3,1,1,2,1,1,0,1,3,3,6,16,21,19,26,30,13,21,22,15,10,5,4,4,7,2,1,2,0,0,0,2,4,2,4,5,5,16,11,16,15,21,28,25,22,22,11,7,6,7,1,2,2,6,4,2,1,2,2,3,1,1,1,2,2,3,3,1,1,0,0,1,2,5,8,9,19,20,25,24,15,18,16,15,11,5,6,3,2,4,0,1,2,2,1,1,1,2,2,6,16,5,16,16,13,27,27,31,19,18,8,9,4,3,1,1,0,0,0,1,2,2,3,4,5],[1,1,2,1,2,2,2,2,2,3,2,1,4,5,6,20,24,22,28,29,14,21,15,14,10,4,2,2,7,3,2,2,2,4,3,0,3,3,5,14,11,16,17,23,35,22,20,20,14,7,6,9,3,2,3,5,1,1,1,3,4,5,2,5,5,4,5,5,3,4,6,6,4,5,4,6,5,9,14,14,16,25,22,24,15,15,15,14,13,5,10,7,2,4,0,0,0,1,2,1,2,6,14,5,13,11,16,27,24,27,19,20,10,8,6,4,1,0,0,2,2,3,2,4,5,5,4,2],[6,5,6,5,6,5,4,5,4,3,4,4,5,6,6,8,23,29,21,24,25,13,23,11,12,9,5,3,2,6,5,4,5,4,2,5,7,10,16,14,17,20,20,34,23,21,23,19,5,8,10,6,3,4,3,1,3,4,5,3,3,2,6,5,5,6,5,4,5,4,1,2,6,5,5,5,6,9,11,16,16,18,31,24,27,22,15,19,15,12,1,5,6,1,4,2,1,1,0,4,8,12,5,10,11,17,26,27,24,22,21,13,12,9,5,4,3,4,6,7,7,7,8,6,6,4,4,6],[11,10,9,10,6,5,6,4,4,5,4,6,6,7,9,8,12,28,31,27,25,28,20,27,17,16,15,10,6,3,4,5,4,3,6,12,11,15,11,14,18,18,31,20,19,27,18,12,14,10,9,6,7,9,8,8,8,9,8,10,10,9,8,8,10,9,9,10,9,10,11,5,4,3,4,3,3,3,8,10,14,16,13,31,23,24,23,17,20,20,19,5,8,9,5,4,2,2,6,10,11,10,11,19,15,25,26,25,31,25,17,16,8,5,8,7,8,9,7,6,9,11,11,11,11,11,11,11],[16,16,15,16,15,15,12,9,8,7,7,3,4,6,8,8,9,13,26,27,27,26,25,21,24,18,15,15,13,15,13,12,13,14,14,10,12,14,17,25,24,26,23,23,32,22,22,11,12,15,9,10,10,7,8,8,7,8,11,14,13,15,14,14,12,15,18,15,16,16,15,15,12,10,10,11,13,12,12,14,23,22,25,20,33,31,29,27,23,20,18,20,12,14,13,15,12,13,15,15,13,13,24,17,34,29,27,27,26,15,16,10,11,10,7,9,8,10,12,15,14,11,10,13,15,16,17,15],[22,20,20,19,19,17,15,20,16,9,7,8,6,7,8,12,9,10,19,32,29,30,30,29,25,32,28,20,21,14,13,12,14,13,15,19,24,24,36,28,29,35,32,32,26,26,15,16,15,15,12,9,8,12,16,18,24,25,22,20,21,21,23,25,25,23,17,16,16,13,11,15,13,13,8,6,5,6,9,14,13,19,19,24,28,29,34,24,24,23,27,22,20,13,15,13,19,20,16,16,20,31,24,39,36,27,31,40,23,32,20,19,16,15,16,13,15,13,13,11,13,16,19,15,15,18,19,22],[22,24,24,25,24,21,24,18,20,22,22,17,15,8,8,10,13,13,16,26,38,31,35,31,34,24,30,31,26,25,25,28,22,22,25,26,31,33,22,31,43,33,33,32,24,15,16,17,13,8,10,15,20,19,20,23,22,20,20,24,24,27,26,25,25,24,21,23,20,17,16,14,14,12,11,10,10,11,10,12,15,21,26,25,22,30,24,41,29,27,24,30,29,26,22,26,26,23,27,26,27,21,33,30,23,44,43,30,29,21,22,14,16,14,12,15,18,20,20,18,17,21,19,25,29,30,29,25],[25,25,25,21,22,26,23,21,21,21,15,15,12,18,18,15,18,18,19,21,29,35,27,31,31,36,29,27,31,30,24,24,31,31,38,41,39,36,41,43,31,36,38,29,27,16,19,16,18,17,19,17,16,21,22,20,22,25,30,32,35,32,30,33,29,28,32,25,24,27,24,19,20,20,24,23,18,15,12,12,16,17,24,23,27,22,37,33,46,39,33,31,32,31,28,27,26,30,29,31,40,47,39,31,47,32,28,22,25,17,14,15,10,12,13,17,15,13,18,22,24,25,33,29,29,27,25,25],[42,40,37,39,35,31,30,32,24,25,25,25,24,16,14,17,14,17,13,23,31,41,43,46,44,43,39,42,33,41,44,37,29,39,36,36,38,43,48,38,39,33,28,30,18,22,22,23,18,18,18,20,23,20,19,20,20,17,22,21,21,24,26,23,30,33,33,40,43,37,38,38,33,32,26,21,28,25,27,23,20,24,24,36,35,40,30,38,38,50,43,36,32,44,41,37,34,35,39,45,46,38,36,54,40,40,27,27,19,18,18,21,26,21,23,20,19,25,22,26,33,31,28,31,25,25,29,35],[21,24,26,23,30,31,32,29,38,35,33,36,34,36,32,24,26,26,30,20,20,32,41,32,35,37,40,38,44,40,40,40,48,48,43,40,36,42,41,43,40,43,39,28,26,30,25,25,26,22,26,22,22,21,21,24,23,36,33,30,28,33,36,36,29,28,26,27,26,31,34,35,34,32,32,33,24,24,22,21,22,24,22,25,30,32,39,29,37,40,49,56,53,39,43,41,48,50,50,47,39,44,53,41,40,31,29,26,21,24,24,17,17,25,23,23,24,24,33,28,23,22,19,18,26,27,30,26],[21,23,23,29,30,32,34,37,34,32,37,29,31,34,32,31,25,22,24,21,23,21,34,41,40,38,39,46,47,38,41,49,53,39,43,42,45,39,30,31,33,27,18,16,27,23,24,22,25,35,27,31,26,30,32,37,42,31,31,32,34,25,22,24,31,30,31,32,29,29,27,30,34,34,29,28,30,32,29,25,21,19,24,22,29,29,27,32,25,31,41,39,44,43,48,54,49,48,49,43,42,42,43,44,38,39,44,35,33,26,26,27,27,22,25,26,32,30,22,26,27,27,30,33,26,27,20,20],[30,27,27,23,20,23,22,20,21,25,25,30,26,24,27,31,31,30,26,26,21,25,25,42,45,46,50,47,48,57,65,55,46,55,46,49,46,39,41,37,35,28,31,37,30,30,33,30,29,27,28,33,37,37,38,33,32,31,27,26,19,19,20,18,16,14,17,17,20,19,17,18,20,22,28,27,25,20,23,30,24,22,21,24,28,36,42,38,43,36,34,46,53,61,63,53,58,53,44,45,54,50,44,33,34,33,22,24,26,29,26,27,26,27,28,28,26,27,29,29,30,31,30,27,26,25,29,30],[10,13,15,16,16,13,13,16,17,18,20,20,26,25,18,23,25,27,28,34,35,31,31,31,45,47,41,50,48,48,43,55,53,50,56,57,44,47,45,43,33,33,27,28,23,23,18,19,21,22,25,19,24,28,24,25,16,16,14,12,15,16,15,12,10,14,14,13,15,15,21,19,17,17,19,21,19,22,19,11,23,24,22,19,14,21,24,33,32,37,32,27,31,35,37,48,41,43,52,51,41,44,36,37,30,25,25,22,21,18,16,19,17,20,20,23,26,26,27,25,20,19,16,14,15,17,13,10],[7,7,7,9,12,13,15,19,21,19,16,17,18,16,25,21,22,21,20,24,22,24,25,27,27,41,47,39,47,57,44,40,49,57,48,35,43,40,37,31,28,27,29,22,24,18,17,21,18,14,14,20,20,15,16,8,11,9,8,8,8,9,6,9,9,8,8,8,9,10,13,10,14,12,16,17,24,24,21,24,18,18,20,24,26,21,24,26,32,29,41,34,36,42,42,42,44,47,44,43,44,31,31,26,24,21,22,21,16,16,18,23,26,30,25,24,20,19,16,13,10,9,11,10,10,6,7,10],[7,6,7,6,8,11,12,10,7,13,18,19,19,20,16,16,18,16,20,16,24,24,24,24,24,27,37,42,39,31,45,41,41,33,38,40,39,33,32,29,27,25,15,15,15,17,17,16,17,20,25,21,13,7,4,5,4,3,4,4,5,3,5,4,4,4,3,4,3,7,7,12,11,11,6,10,11,11,18,16,17,15,15,15,17,15,19,26,27,28,26,43,40,33,30,32,40,37,37,37,34,35,32,26,26,26,24,22,25,21,23,18,19,15,15,14,15,13,11,12,14,13,10,8,7,6,6,4],[7,6,5,6,4,4,3,5,10,7,5,8,8,11,16,17,14,18,17,13,14,15,15,15,17,16,21,27,32,31,34,38,31,33,30,32,28,28,22,16,14,16,20,18,15,17,19,16,18,18,13,7,7,8,7,6,6,7,6,5,4,4,5,5,7,7,7,5,5,3,3,4,5,12,13,10,6,9,9,15,14,14,10,11,10,16,16,19,23,30,31,28,27,32,34,29,29,30,28,26,24,26,25,26,25,20,17,14,19,19,17,14,10,11,15,11,8,9,9,10,8,8,7,8,7,7,8,8],[3,4,4,3,4,4,4,4,4,7,9,9,8,12,12,12,13,13,11,17,16,19,21,22,20,18,15,18,22,27,27,25,25,22,23,21,19,16,16,18,19,14,12,13,14,15,15,16,10,7,4,7,4,5,6,6,3,2,2,1,4,4,3,3,2,2,3,6,6,6,4,5,4,5,9,9,12,9,10,8,10,14,19,15,15,16,16,14,16,23,25,25,24,23,27,28,23,23,22,20,16,15,12,12,9,11,11,13,9,10,8,10,16,12,9,13,10,8,6,4,4,1,2,3,3,3,2,2],[0,0,0,1,1,0,2,3,2,2,3,4,9,6,8,12,15,16,17,16,17,15,14,15,17,17,20,18,16,17,14,18,18,14,12,13,14,13,10,13,12,17,18,17,19,17,10,8,10,8,7,6,6,3,1,1,2,2,3,3,0,0,0,0,0,1,1,1,2,3,5,4,6,4,3,8,7,11,11,10,11,10,10,12,13,12,13,14,13,10,14,15,21,26,23,20,23,21,19,27,24,20,13,11,9,8,6,8,6,11,13,15,8,10,8,3,5,5,4,2,2,2,1,0,0,0,0,0],[0,0,0,0,0,1,2,1,2,3,4,3,3,4,4,2,2,4,8,10,8,9,12,14,13,14,10,9,8,9,7,6,8,11,10,7,5,6,8,8,10,6,7,6,5,4,6,5,3,2,3,1,1,2,1,1,0,1,0,0,0,0,0,0,0,0,0,0,0,1,1,3,2,3,4,4,8,7,6,11,8,7,7,10,10,9,8,9,10,12,13,18,18,13,11,19,16,17,15,8,10,10,14,13,10,10,11,12,11,10,8,6,7,5,6,6,4,2,1,1,0,0,0,0,0,0,0,0],[1,1,1,1,1,1,0,1,1,0,0,2,2,3,3,3,4,4,4,5,7,8,6,4,6,4,5,8,5,4,7,6,4,5,8,6,7,4,6,5,5,6,4,3,4,2,3,2,2,1,1,1,1,0,0,1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,2,2,3,2,0,4,5,3,9,11,12,9,9,11,11,12,13,9,9,4,5,11,14,13,15,15,14,11,5,4,4,5,10,9,11,10,12,8,9,6,5,4,3,2,1,0,1,1,1,1,1,1,1,1,1,1],[0,0,0,0,0,0,0,0,0,1,1,0,0,1,2,3,4,3,0,0,0,0,1,3,4,7,7,4,7,5,2,3,4,1,0,3,4,10,7,7,6,4,4,4,3,3,2,2,1,1,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,2,4,2,3,3,3,2,4,6,7,5,6,5,4,6,4,6,8,5,6,5,4,2,3,6,11,9,7,6,5,5,5,3,2,4,2,2,2,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,1,1,0,0,1,1,1,4,4,3,3,3,3,3,2,3,4,2,4,5,5,5,7,7,4,5,2,2,2,2,2,3,3,1,1,0,0,0,0,0,0,1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,2,3,4,3,4,3,4,4,6,6,4,4,5,6,7,3,4,3,2,0,0,1,0,0,2,5,6,5,5,4,4,3,2,2,2,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0,0,1,1,1,1,2,2,2,3,3,3,2,1,1,1,1,3,2,1,1,0,0,1,4,2,4,4,2,1,1,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,1,0,0,2,2,3,2,1,2,1,1,2,4,3,2,0,4,3,2,1,1,1,0,0,0,0,0,0,1,1,1,1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,3,3,4,4,3,2,2,0,0,1,1,0,0,0,0,0,0,0,1,1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,1,1,2,3,2,3,3,3,1,1,3,4,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,1,1,1,1,1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,1,0,0,1,1,2,2,2,2,2,3,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,1,1,1,1,1,1,1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]],"time_ps":[0.0,1.55,3.101,4.651,6.201,7.751,9.302,10.852,12.402,13.953,15.503,17.053,18.604,20.154,21.704,23.254,24.805,26.355,27.905,29.456,31.006,32.556,34.106,35.657,37.207,38.757,40.308,41.858,43.408,44.958,46.509,48.059,49.609,51.16,52.71,54.26,55.811,57.361,58.911,60.461,62.012,63.562,65.112,66.663,68.213,69.763,71.313,72.864,74.414,75.964,77.515,79.065,80.615,82.166,83.716,85.266,86.816,88.367,89.917,91.467,93.018,94.568,96.118,97.668,99.219,100.769,102.319,103.87,105.42,106.97,108.521,110.071,111.621,113.171,114.722,116.272,117.822,119.373,120.923,122.473,124.023,125.574,127.124,128.674,130.225,131.775,133.325,134.875,136.426,137.976,139.526,141.077,142.627,144.177,145.728,147.278,148.828,150.378,151.929,153.479,155.029,156.58,158.13,159.68,161.23,162.781,164.331,165.881,167.432,168.982,170.532,172.083,173.633,175.183,176.733,178.284,179.834,181.384,182.935,184.485,186.035,187.585,189.136,190.686,192.236,193.787,195.337,196.887,198.438],"amplitude_ua":[-5.3701,-4.9017,-4.4333,-3.9649,-3.4965,-3.0281,-2.5597,-2.0913,-1.6229,-1.1545,-0.6861,-0.2177,0.2507,0.7192,1.1876,1.656,2.1244,2.5928,3.0612,3.5296,3.998,4.4664,4.9348,5.4032,5.8716,6.34,6.8084,7.2768,7.7452,8.2136,8.682,9.1504,9.6188,10.0872,10.5556,11.024,11.4924,11.9608,12.4292,12.8976,13.366,13.8344,14.3028,14.7712,15.2396,15.7081,16.1765,16.6449,17.1133,17.5817,18.0501,18.5185,18.9869,19.4553,19.9237,20.3921,20.8605,21.3289,21.7973,22.2657,22.7341,23.2025,23.6709,24.1393,24.6077,25.0761,25.5445,26.0129,26.4813,26.9497,27.4181,27.8865,28.3549],"unit":"A"},"sensitivity":[{"launch_dbm":-24.0,"q":0.15776902807585286,"ber":0.4373194024846345},{"launch_dbm":-23.0,"q":0.19919212935889832,"ber":0.4210562279613798},{"launch_dbm":-22.0,"q":0.2514913539473861,"ber":0.4007171229954354},{"launch_dbm":-21.0,"q":0.3173278397877524,"ber":0.3754974275164006},{"launch_dbm":-20.0,"q":0.4003210360350696,"ber":0.3444600379967928},{"launch_dbm":-19.0,"q":0.5047340651570462,"ber":0.30687281575536784},{"launch_dbm":-18.0,"q":0.6359618847965411,"ber":0.2624006326392044},{"launch_dbm":-17.0,"q":0.8008929780139885,"ber":0.21159680280945042},{"launch_dbm":-16.0,"q":1.007964178839164,"ber":0.1567358296036007},{"launch_dbm":-15.0,"q":1.26719995400844,"ber":0.1025419011153715},{"launch_dbm":-14.0,"q":1.590693389223489,"ber":0.05583929770620303},{"launch_dbm":-13.0,"q":1.992331900138551,"ber":0.0231673269139319},{"launch_dbm":-12.0,"q":2.487609122596794,"ber":0.0064302496504196555}],"context":{"bit_rate":10000000000.0,"samples_per_symbol":64,"sequence_length":2048,"num_samples":131072,"seed":2026}}</script>
+
+<script>
+(() => {
+  "use strict";
+  const DATA = JSON.parse(document.getElementById("oosim-data").textContent);
+  const PORT_COLOR = {
+    optical: "#22d3c5", electrical: "#f0a030", binary: "#7c86a0",
+    symbol: "#9b7cf6", metric: "#e85d9b"
+  };
+  const CATEGORY_ORDER = [
+    "Optical Sources", "Electrical Sources", "Modulators", "Fiber",
+    "Amplifiers", "Passive", "Receivers", "Electrical", "Measurements"
+  ];
+  // Which port type a category is coloured by in the palette.
+  const CATEGORY_PORT = {
+    "Optical Sources": "optical", "Electrical Sources": "binary", "Modulators": "optical",
+    "Fiber": "optical", "Amplifiers": "optical", "Passive": "optical",
+    "Receivers": "electrical", "Electrical": "electrical", "Measurements": "metric"
+  };
+
+  /* ---------- The schematic, as actually built by examples/ook_link.py ---- */
+  const NODES = [
+    { id: "prbs",   type: "PRBSGenerator",         x:  40, y: 236, label: "prbs",   sub: "PRBS-15" },
+    { id: "driver", type: "NRZDriver",             x: 178, y: 236, label: "driver", sub: "4 → 0 V" },
+    { id: "laser",  type: "CWLaser",               x:  40, y:  96, label: "laser",  sub: "1550 nm" },
+    { id: "mzm",    type: "MachZehnderModulator",  x: 316, y: 150, label: "mzm",    sub: "Vπ 4 V" },
+    { id: "fiber",  type: "Fiber",                 x: 454, y: 150, label: "fiber",  sub: "40 km" },
+    { id: "pin",    type: "PINPhotodiode",         x: 592, y: 150, label: "pin",    sub: "0.8 A/W" },
+    { id: "lpf",    type: "ElectricalFilter",      x: 592, y: 258, label: "lpf",    sub: "7 GHz" },
+    { id: "ber",    type: "BERAnalyzer",           x: 730, y: 258, label: "ber",    sub: "decision" }
+  ];
+  const EDGES = [
+    { from: ["prbs", "out"],   to: ["driver", "in"],           type: "binary" },
+    { from: ["driver", "out"], to: ["mzm", "electrical_in"],   type: "electrical" },
+    { from: ["laser", "out"],  to: ["mzm", "optical_in"],      type: "optical" },
+    { from: ["mzm", "out"],    to: ["fiber", "in"],            type: "optical" },
+    { from: ["fiber", "out"],  to: ["pin", "in"],              type: "optical" },
+    { from: ["pin", "out"],    to: ["lpf", "in"],              type: "electrical" },
+    { from: ["lpf", "out"],    to: ["ber", "in"],              type: "electrical" },
+    { from: ["prbs", "out"],   to: ["ber", "reference"],       type: "binary" }
+  ];
+  // Values the export script actually ran with.
+  const VALUES = {
+    laser:  { power: -8, wavelength: 1550, linewidth: 100 },
+    prbs:   { order: 15 },
+    driver: { v_low: 4, v_high: 0 },
+    mzm:    { v_pi: 4, v_bias: 0, extinction_ratio: 30, insertion_loss: 0 },
+    fiber:  { length: 40, attenuation: 0.2, dispersion: 17, nonlinearity: 0,
+              max_nonlinear_phase: 0.005, pmd_coefficient: 0, pmd_sections: 60 },
+    pin:    { responsivity: 0.8, dark_current: 0, load_resistance: 50, temperature: 300,
+              shot_noise: true, thermal_noise: true },
+    lpf:    { bandwidth: 7 },
+    ber:    { ignore_edges: 4, adaptive_timing: true, sample_offset: 0 }
+  };
+
+  const NODE_W = 116, NODE_H = 52;
+  const $ = (s) => document.querySelector(s);
+
+  /* ---------- Palette ---------------------------------------------------- */
+  const paletteList = $("#palette-list");
+
+  function buildPalette(filter = "") {
+    const q = filter.trim().toLowerCase();
+    const byCat = new Map();
+    let shown = 0;
+
+    for (const [key, m] of Object.entries(DATA.manifests)) {
+      if (q && !(m.name.toLowerCase().includes(q) || key.toLowerCase().includes(q)
+                 || m.category.toLowerCase().includes(q))) continue;
+      if (!byCat.has(m.category)) byCat.set(m.category, []);
+      byCat.get(m.category).push([key, m]);
+      shown++;
+    }
+
+    paletteList.innerHTML = "";
+    if (shown === 0) {
+      paletteList.innerHTML =
+        `<p class="empty-hint">No component matches “${escapeHtml(filter)}”.<br>` +
+        `Plugin components appear here once their package is imported.</p>`;
+      $("#palette-count").textContent = "0";
+      return;
+    }
+
+    const cats = [...byCat.keys()].sort(
+      (a, b) => CATEGORY_ORDER.indexOf(a) - CATEGORY_ORDER.indexOf(b));
+
+    for (const cat of cats) {
+      const items = byCat.get(cat).sort((a, b) => a[1].name.localeCompare(b[1].name));
+      const wrap = document.createElement("div");
+      wrap.className = "cat";
+      wrap.innerHTML =
+        `<button class="cat-head" type="button">
+           <svg width="9" height="9" viewBox="0 0 12 12" fill="none" stroke="currentColor"
+                stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+             <path d="M2.5 4.2L6 7.8l3.5-3.6"/>
+           </svg>${escapeHtml(cat)}</button>
+         <div class="cat-items"></div>`;
+      const list = wrap.querySelector(".cat-items");
+      for (const [key, m] of items) {
+        const b = document.createElement("button");
+        b.className = "comp";
+        b.type = "button";
+        b.draggable = true;
+        b.dataset.type = key;
+        b.innerHTML =
+          `<span class="swatch" style="background:${PORT_COLOR[CATEGORY_PORT[cat]] || "#7c86a0"}"></span>
+           <span class="nm">${escapeHtml(m.name)}</span>`;
+        b.addEventListener("click", () => showManifest(key));
+        list.appendChild(b);
+      }
+      wrap.querySelector(".cat-head").addEventListener("click", () => {
+        wrap.dataset.collapsed = wrap.dataset.collapsed === "true" ? "false" : "true";
+      });
+      paletteList.appendChild(wrap);
+    }
+    $("#palette-count").textContent = String(shown);
+  }
+
+  $("#palette-search").addEventListener("input", (e) => buildPalette(e.target.value));
+
+  /* ---------- Canvas ----------------------------------------------------- */
+  const svg = $("#graph");
+  const NS = "http://www.w3.org/2000/svg";
+  let selected = "laser";
+
+  function portsOf(node) {
+    const m = DATA.manifests[node.type];
+    return {
+      inputs: Object.entries(m.ports.inputs),
+      outputs: Object.entries(m.ports.outputs).filter(([, t]) => t !== "metric" || node.id === "ber")
+    };
+  }
+
+  function portPos(nodeId, portName) {
+    const node = NODES.find((n) => n.id === nodeId);
+    const { inputs, outputs } = portsOf(node);
+    let idx = inputs.findIndex(([n]) => n === portName);
+    if (idx >= 0) return { x: node.x, y: node.y + (NODE_H * (idx + 1)) / (inputs.length + 1) };
+    idx = outputs.findIndex(([n]) => n === portName);
+    if (idx < 0) idx = 0;
+    return { x: node.x + NODE_W, y: node.y + (NODE_H * (idx + 1)) / (outputs.length + 1) };
+  }
+
+  function el(name, attrs, parent) {
+    const e = document.createElementNS(NS, name);
+    for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, String(v));
+    if (parent) parent.appendChild(e);
+    return e;
+  }
+
+  function drawGraph() {
+    svg.innerHTML = "";
+    const wireLayer = el("g", {}, svg);
+    const nodeLayer = el("g", {}, svg);
+
+    for (const e of EDGES) {
+      const a = portPos(e.from[0], e.from[1]);
+      const b = portPos(e.to[0], e.to[1]);
+      const dx = Math.max(34, Math.abs(b.x - a.x) * 0.45);
+      const d = `M${a.x} ${a.y} C${a.x + dx} ${a.y} ${b.x - dx} ${b.y} ${b.x} ${b.y}`;
+      el("path", { d, class: "wire", stroke: PORT_COLOR[e.type] }, wireLayer);
+      el("path", { d, class: "wire-flow", stroke: "#ffffff" }, wireLayer);
+    }
+
+    for (const n of NODES) {
+      const m = DATA.manifests[n.type];
+      const g = el("g", { class: "node-g" + (n.id === selected ? " selected" : ""),
+                          tabindex: "0", role: "button",
+                          "aria-label": m.name + " " + n.label }, nodeLayer);
+      el("rect", { x: n.x - 3, y: n.y - 3, width: NODE_W + 6, height: NODE_H + 6,
+                   rx: 8, class: "node-halo" }, g);
+      el("rect", { x: n.x, y: n.y, width: NODE_W, height: NODE_H, rx: 6,
+                   class: "node-box" }, g);
+
+      const { inputs, outputs } = portsOf(n);
+      const stripType = outputs[0] ? outputs[0][1] : (inputs[0] ? inputs[0][1] : "optical");
+      el("rect", { x: n.x, y: n.y, width: 3, height: NODE_H, rx: 1.5,
+                   fill: PORT_COLOR[stripType], class: "node-strip" }, g);
+
+      // The box is fixed width, so long names are clipped rather than allowed to
+      // spill across neighbouring blocks; the full name lives in the tooltip.
+      const t1 = el("text", { x: n.x + 12, y: n.y + 21, class: "node-label" }, g);
+      t1.textContent = truncate(m.name, 15);
+      el("title", {}, t1).textContent = m.name;
+      const t2 = el("text", { x: n.x + 12, y: n.y + 37, class: "node-sub" }, g);
+      t2.textContent = `${n.label} · ${n.sub}`;
+
+      inputs.forEach(([name, type], i) => {
+        const y = n.y + (NODE_H * (i + 1)) / (inputs.length + 1);
+        const c = el("circle", { cx: n.x, cy: y, r: 4, fill: PORT_COLOR[type],
+                                 class: "port" }, g);
+        el("title", {}, c).textContent = `${name} · ${type}`;
+      });
+      outputs.forEach(([name, type], i) => {
+        const y = n.y + (NODE_H * (i + 1)) / (outputs.length + 1);
+        const c = el("circle", { cx: n.x + NODE_W, cy: y, r: 4, fill: PORT_COLOR[type],
+                                 class: "port" }, g);
+        el("title", {}, c).textContent = `${name} · ${type}`;
+      });
+
+      const select = () => { selected = n.id; drawGraph(); showNode(n); };
+      g.addEventListener("click", select);
+      g.addEventListener("keydown", (ev) => {
+        if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); select(); }
+      });
+    }
+  }
+
+  /* ---------- Inspector -------------------------------------------------- */
+  const inspector = $("#inspector");
+
+  function fieldFor(name, spec, value) {
+    const isBool = spec.type === "bool";
+    const shown = value === undefined ? spec.default : value;
+    const range = (spec.min !== undefined || spec.max !== undefined)
+      ? `${spec.min !== undefined ? spec.min : "−∞"} … ${spec.max !== undefined ? spec.max : "∞"}`
+      : "";
+    const control = isBool
+      ? `<input class="toggle" type="checkbox" ${shown ? "checked" : ""}
+                aria-label="${escapeHtml(name)}">`
+      : `<span class="field-input">
+           <input type="text" value="${fmt(shown)}" aria-label="${escapeHtml(name)}">
+           <span class="unit">${escapeHtml(spec.unit || "")}</span>
+         </span>`;
+    return `<div class="field">
+        <div class="field-row"><label>${escapeHtml(name)}</label>${control}</div>
+        ${spec.doc ? `<p class="field-doc">${escapeHtml(spec.doc)}</p>` : ""}
+        ${range ? `<p class="field-range">range ${range}</p>` : ""}
+      </div>`;
+  }
+
+  function renderInspector(key, label, values) {
+    const m = DATA.manifests[key];
+    const ports = [
+      ...Object.entries(m.ports.inputs).map(([n, t]) => [n, t, "in"]),
+      ...Object.entries(m.ports.outputs).map(([n, t]) => [n, t, "out"])
+    ];
+    inspector.innerHTML =
+      `<div class="insp-title">
+         <h2>${escapeHtml(m.name)}</h2>
+         <div class="insp-meta">
+           ${label ? `<span class="chip">${escapeHtml(label)}</span>` : ""}
+           <span>${escapeHtml(m.category)}</span>
+           <span style="color:var(--ink-4)">v${escapeHtml(m.version)}</span>
+         </div>
+       </div>
+       ${Object.entries(m.parameters)
+          .map(([n, s]) => fieldFor(n, s, values && values[n])).join("")}
+       <div class="field" style="border-bottom:0">
+         <p class="side-title" style="margin-bottom:5px">Ports</p>
+         ${ports.map(([n, t, dir]) => `
+           <div class="stat">
+             <dt style="display:flex;align-items:center;gap:6px">
+               <span style="width:6px;height:6px;border-radius:50%;background:${PORT_COLOR[t]};
+                            display:inline-block"></span>${escapeHtml(n)}
+             </dt>
+             <dd style="color:var(--ink-4)">${dir} · ${escapeHtml(t)}</dd>
+           </div>`).join("")}
+       </div>`;
+    $("#sb-sel").textContent = `${m.name}${label ? " · " + label : ""} selected`;
+  }
+
+  const showNode = (n) => renderInspector(n.type, n.label, VALUES[n.id]);
+  const showManifest = (key) => renderInspector(key, "", null);
+
+  /* ---------- Eye diagram ------------------------------------------------ */
+  function sizeCanvas(c) {
+    const r = c.parentElement.getBoundingClientRect();
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    c.width = Math.max(1, Math.round(r.width - 24) * dpr);
+    c.height = Math.max(1, Math.round(r.height - 20) * dpr);
+    const ctx = c.getContext("2d");
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    return { ctx, w: c.width / dpr, h: c.height / dpr };
+  }
+
+  function drawEye() {
+    const c = $("#eye-canvas");
+    if (!c.parentElement.offsetWidth) return;
+    const { ctx, w, h } = sizeCanvas(c);
+    const counts = DATA.eye.counts;
+    const rows = counts.length, cols = counts[0].length;
+
+    ctx.fillStyle = "#080b10";
+    ctx.fillRect(0, 0, w, h);
+
+    const padL = 44, padB = 20, padT = 6, padR = 6;
+    const pw = w - padL - padR, ph = h - padT - padB;
+
+    let max = 0;
+    for (const row of counts) for (const v of row) if (v > max) max = v;
+    const norm = (v) => Math.pow(v / max, 0.42);   // compress the rails' dominance
+
+    const cw = pw / cols, chh = ph / rows;
+    for (let r = 0; r < rows; r++) {
+      for (let k = 0; k < cols; k++) {
+        const v = counts[r][k];
+        if (!v) continue;
+        const t = norm(v);
+        // graphite → C-band cyan → white: brightness is density
+        const rr = Math.round(18 + t * t * 220);
+        const gg = Math.round(40 + t * 195);
+        const bb = Math.round(52 + t * 165);
+        ctx.fillStyle = `rgb(${rr},${gg},${bb})`;
+        ctx.fillRect(padL + k * cw, padT + ph - (r + 1) * chh, Math.ceil(cw) + 0.5,
+                     Math.ceil(chh) + 0.5);
+      }
+    }
+
+    const amp = DATA.eye.amplitude_ua, time = DATA.eye.time_ps;
+    const a0 = amp[0], a1 = amp[amp.length - 1];
+    const yFor = (uA) => padT + ph - ((uA - a0) / (a1 - a0)) * ph;
+
+    // Decision threshold and sampling instant — the two lines that explain the number.
+    const thrUA = DATA.measurement.threshold * 1e6;
+    ctx.strokeStyle = "rgba(232,93,155,0.85)";
+    ctx.setLineDash([4, 4]); ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(padL, yFor(thrUA)); ctx.lineTo(w - padR, yFor(thrUA)); ctx.stroke();
+
+    const frac = (DATA.measurement.sample_offset + 0.5) / DATA.context.samples_per_symbol;
+    for (const cx of [padL + pw * frac / 2, padL + pw * (0.5 + frac / 2)]) {
+      ctx.strokeStyle = "rgba(240,160,48,0.55)";
+      ctx.beginPath(); ctx.moveTo(cx, padT); ctx.lineTo(cx, padT + ph); ctx.stroke();
+    }
+    ctx.setLineDash([]);
+
+    // Axes
+    ctx.strokeStyle = "#232b38"; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(padL, padT); ctx.lineTo(padL, padT + ph);
+    ctx.lineTo(w - padR, padT + ph); ctx.stroke();
+
+    ctx.fillStyle = "#8e9bb0";
+    ctx.font = "10px ui-monospace, Menlo, Consolas, monospace";
+    ctx.textAlign = "right"; ctx.textBaseline = "middle";
+    for (const v of [a0, (a0 + a1) / 2, a1]) ctx.fillText(v.toFixed(0), padL - 6, yFor(v));
+    ctx.save(); ctx.translate(11, padT + ph / 2); ctx.rotate(-Math.PI / 2);
+    ctx.textAlign = "center"; ctx.fillText("µA", 0, 0); ctx.restore();
+
+    ctx.textAlign = "center"; ctx.textBaseline = "top";
+    ctx.fillText("0", padL, padT + ph + 5);
+    ctx.fillText(((time[time.length - 1]) / 2).toFixed(0), padL + pw / 2, padT + ph + 5);
+    ctx.fillText(time[time.length - 1].toFixed(0) + " ps", w - padR - 16, padT + ph + 5);
+  }
+
+  /* ---------- Sensitivity curve ------------------------------------------ */
+  function drawSens() {
+    const c = $("#sens-canvas");
+    if (!c.parentElement.offsetWidth) return;
+    const { ctx, w, h } = sizeCanvas(c);
+    ctx.fillStyle = "#080b10"; ctx.fillRect(0, 0, w, h);
+
+    const pts = DATA.sensitivity;
+    const padL = 46, padB = 22, padT = 10, padR = 12;
+    const pw = w - padL - padR, ph = h - padT - padB;
+    const x0 = pts[0].launch_dbm, x1 = pts[pts.length - 1].launch_dbm;
+    const lo = -14, hi = 0;                      // log10(BER)
+    const X = (d) => padL + ((d - x0) / (x1 - x0)) * pw;
+    const Y = (ber) => {
+      const l = Math.max(lo, Math.min(hi, Math.log10(Math.max(ber, 1e-14))));
+      return padT + ph - ((l - lo) / (hi - lo)) * ph;
+    };
+
+    ctx.strokeStyle = "#1a212b"; ctx.lineWidth = 1;
+    for (let e = hi; e >= lo; e -= 2) {
+      const y = Y(Math.pow(10, e));
+      ctx.beginPath(); ctx.moveTo(padL, y); ctx.lineTo(w - padR, y); ctx.stroke();
+      ctx.fillStyle = "#7a869b";
+      ctx.font = "10px ui-monospace, Menlo, Consolas, monospace";
+      ctx.textAlign = "right"; ctx.textBaseline = "middle";
+      ctx.fillText("1e" + e, padL - 6, y);
+    }
+
+    // The Q = 6 line: the operating point everybody quotes.
+    ctx.strokeStyle = "rgba(70,209,127,0.5)"; ctx.setLineDash([4, 4]);
+    const yQ6 = Y(9.87e-10);
+    ctx.beginPath(); ctx.moveTo(padL, yQ6); ctx.lineTo(w - padR, yQ6); ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = "#46d17f"; ctx.textAlign = "left"; ctx.textBaseline = "bottom";
+    ctx.fillText("Q = 6", padL + 5, yQ6 - 3);
+
+    ctx.strokeStyle = "#22d3c5"; ctx.lineWidth = 1.75; ctx.beginPath();
+    pts.forEach((p, i) => (i ? ctx.lineTo(X(p.launch_dbm), Y(p.ber))
+                             : ctx.moveTo(X(p.launch_dbm), Y(p.ber))));
+    ctx.stroke();
+    ctx.fillStyle = "#22d3c5";
+    for (const p of pts) {
+      ctx.beginPath(); ctx.arc(X(p.launch_dbm), Y(p.ber), 2.4, 0, Math.PI * 2); ctx.fill();
+    }
+
+    ctx.strokeStyle = "#232b38"; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(padL, padT); ctx.lineTo(padL, padT + ph);
+    ctx.lineTo(w - padR, padT + ph); ctx.stroke();
+
+    ctx.fillStyle = "#8e9bb0"; ctx.textAlign = "center"; ctx.textBaseline = "top";
+    for (const d of [x0, (x0 + x1) / 2, x1]) ctx.fillText(d.toFixed(0), X(d), padT + ph + 6);
+    ctx.fillText("launch power (dBm)", padL + pw / 2, padT + ph + 6 + 11);
+  }
+
+  /* ---------- Results ---------------------------------------------------- */
+  const m = DATA.measurement;
+  function fillResults() {
+    $("#m-q").textContent = m.q_factor.toFixed(2);
+    $("#m-q").classList.toggle("pass", m.q_factor >= 6);
+    $("#m-qdb").textContent = m.q_db.toFixed(1);
+    $("#m-ber").textContent = m.ber.toExponential(2).replace("e", "e");
+    $("#m-err").textContent = `${m.errors} / ${m.bits}`;
+    $("#s-thr").textContent = (m.threshold * 1e6).toFixed(2) + " µA";
+    $("#s-off").textContent = m.sample_offset + " / " + DATA.context.samples_per_symbol;
+    $("#s-bits").textContent = m.bits.toLocaleString("en-US");
+    $("#s-m1").textContent = (m.mean_one * 1e6).toFixed(2) + " µA";
+    $("#s-s1").textContent = (m.std_one * 1e6).toFixed(3) + " µA";
+    $("#s-m0").textContent = (m.mean_zero * 1e6).toFixed(2) + " µA";
+    $("#s-s0").textContent = (m.std_zero * 1e6).toFixed(3) + " µA";
+    $("#s-pts").textContent = String(DATA.sensitivity.length);
+    const q6 = DATA.sensitivity.find((p) => p.q >= 6);
+    $("#s-sens").textContent = q6 ? q6.launch_dbm.toFixed(0) + " dBm" : "off scale";
+  }
+
+  const LOG = [
+    ["0.000", "graph validated — 8 blocks, 7 links, no type conflicts", "ok"],
+    ["0.004", "scheduling: prbs → driver → laser → mzm → fiber → pin → lpf → ber"],
+    ["0.011", "context: 10 GBd, 64 sa/sym, 2048 sym, 131 072 samples, seed 2026"],
+    ["0.086", "fiber: linear span, closed-form propagation (nonlinearity = 0)"],
+    ["0.240", "pin: shot + thermal noise, B = 320.0 GHz"],
+    ["0.352", "lpf: gaussian 7 GHz, noise bandwidth 7.45 GHz"],
+    ["0.398", "ber: sampling offset chosen by Q search", "warn"],
+    ["0.410", `run complete — Q = ${m.q_factor.toFixed(3)}, BER = ${m.ber.toExponential(2)}`, "ok"]
+  ];
+  function fillLog() {
+    $("#log").innerHTML = LOG.map(([t, msg, cls]) =>
+      `<div class="log-line"><span class="log-t">${t}</span>` +
+      `<span class="log-m ${cls || ""}">${escapeHtml(msg)}</span></div>`).join("");
+  }
+
+  /* ---------- Interaction ------------------------------------------------ */
+  document.querySelectorAll(".tab").forEach((tab) => {
+    tab.addEventListener("click", () => {
+      document.querySelectorAll(".tab").forEach((t) =>
+        t.setAttribute("aria-selected", String(t === tab)));
+      document.querySelectorAll(".pane").forEach((p) =>
+        p.dataset.active = String(p.dataset.pane === tab.dataset.pane));
+      if (tab.dataset.pane === "eye") drawEye();
+      if (tab.dataset.pane === "sens") drawSens();
+    });
+  });
+
+  let zoom = 100;
+  const setZoom = (z) => {
+    zoom = Math.max(40, Math.min(220, z));
+    $("#zoom-val").textContent = zoom + "%";
+    svg.style.transform = `scale(${zoom / 100})`;
+    svg.style.transformOrigin = "center center";
+  };
+  $("#zoom-in").addEventListener("click", () => setZoom(zoom + 20));
+  $("#zoom-out").addEventListener("click", () => setZoom(zoom - 20));
+
+  // The one authored motion moment: a run pulses down the wires in signal order.
+  const runBtn = $("#run-btn"), stopBtn = $("#stop-btn");
+  runBtn.addEventListener("click", () => {
+    if (runBtn.disabled) return;
+    const wrap = $("#canvas-wrap");
+    wrap.classList.add("running");
+    runBtn.disabled = true; stopBtn.disabled = false;
+    $("#kernel-dot").classList.add("busy");
+    $("#kernel-text").textContent = "running…";
+    setTimeout(() => {
+      wrap.classList.remove("running");
+      runBtn.disabled = false; stopBtn.disabled = true;
+      $("#kernel-dot").classList.remove("busy");
+      $("#kernel-text").textContent = "engine ready";
+      $("#sb-time").textContent = "last run 0.41 s";
+    }, 1600);
+  });
+
+  /* ---------- Helpers ---------------------------------------------------- */
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, (c) =>
+      ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  }
+  function truncate(s, n) {
+    return s.length <= n ? s : s.slice(0, n - 1).trimEnd() + "…";
+  }
+  function fmt(v) {
+    if (typeof v === "boolean") return v ? "true" : "false";
+    if (typeof v !== "number") return String(v);
+    if (v !== 0 && (Math.abs(v) < 1e-3 || Math.abs(v) >= 1e6)) return v.toExponential(2);
+    return String(Number(v.toFixed(6)));
+  }
+
+  buildPalette();
+  drawGraph();
+  showNode(NODES.find((n) => n.id === "laser"));
+  fillResults();
+  fillLog();
+  requestAnimationFrame(() => { drawEye(); });
+
+  let resizeTimer;
+  window.addEventListener("resize", () => {
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(() => {
+      const active = document.querySelector('.pane[data-active="true"]').dataset.pane;
+      if (active === "eye") drawEye();
+      if (active === "sens") drawSens();
+    }, 90);
+  });
+})();
+</script>

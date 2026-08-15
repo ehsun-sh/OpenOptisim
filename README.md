@@ -267,7 +267,7 @@ time window, and results are reproducible.
 | **0 — Foundations** ✅ | Signal model, context, port types, component base, registry, scheduler, `.oosim` project format, sweeps, CI | ~1 month |
 | **1 — MVP: linear link** *(essentially done)* | ✅ PRBS → NRZ → laser → MZM → fiber (α + CD) → PIN → filter → eye/Q/BER, validated end to end. **Python only, no GUI.** | ~2–3 months |
 | **1.5 — Nonlinear & amplified** ✅ | Adaptive-step SSFM, Kerr, EDFA with ASE, OSNR, PMD, APD | ~2 months |
-| **2 — GUI & DSP** | Graph editor, plots, pulse shaping, FIR, equalizers (LMS/CMA), OSA, constellation, sweeps | ~3–4 months |
+| **2 — GUI & DSP** *(design started)* | ✅ Layout agreed, [interactive mockup](docs/ui-mockup.html) built on real engine output · ⬜ session server, graph editor, DSP blocks, OSA, constellation | ~3–4 months |
 | **3 — Coherent & WDM** | IQ mod, M-QAM, LO, 90° hybrid, balanced detection, coherent DSP, DWDM + crosstalk, 400G/800G references, CuPy back-end | ~6 months |
 | **4 — PIC** | Waveguides, ring resonators, MMI, MZI via integration with an existing S-matrix solver; PDK import | — |
 
