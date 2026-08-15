@@ -4,9 +4,12 @@
 THESIS: A schematic editor that shows an engineer the physics, not the chrome. It refuses the
 consumer-app arrangement — generous whitespace, big type, gentle motion — because this surface is
 used fifty times an hour beside a terminal.
-OWN-WORLD: Graphite ground (#0B0E13 → #171C24), hairline rules, and a spectral accent system where
-every port colour is a real wavelength: optical C-band cyan #22D3C5, electrical amber, binary
-slate, symbol violet, metric magenta. A wire's colour tells you what travels down it.
+OWN-WORLD: A spectral accent system where every port colour is a real wavelength — optical C-band
+cyan, electrical amber, binary slate, symbol violet, metric magenta. A wire's colour tells you what
+travels down it. Two grounds carry it: paper (default, #E9EDF3 canvas under white panels) and
+graphite (#0B0E13 → #171C24). The hue identity survives both; the values are re-derived per ground,
+not inverted — on paper the spectrum darkens to hold contrast, and the eye's density ramp runs
+pale → cyan → deep teal instead of graphite → cyan → white.
 STORY: The engineer recognises the layout instantly, finds the component, reads the parameters in
 their real units, runs, and reads Q off the eye.
 FIRST VIEWPORT: Menu, then action toolbar, then a three-column body — palette left, node canvas
@@ -20,9 +23,132 @@ verdict, and DESIGN.md
 
 <style>
   /* ---- Spectral tokens -------------------------------------------------
-     Committed dark. The use scene decides it: a long session beside a
-     terminal, often at night. Not a category default. */
+     Two grounds, one identity. Paper is the default: a schematic is a
+     document before it is a screen, and it is read in daylight, printed,
+     and dropped into papers. Graphite is one click away for the night
+     session beside a terminal.
+
+     Every colour lives here and nowhere else — including the ones the
+     canvas plots draw with, which read these back at draw time. A colour
+     defined only inside a theme block cannot render in the other. */
+
   :root {
+    /* ---- Paper (default) ---- */
+    color-scheme: light;
+
+    --ground: #e9edf3;      /* recessed: canvas bed and input wells */
+    --panel: #ffffff;
+    --panel-2: #f3f6fa;
+    --raised: #e2e8f1;      /* interactive wash: hover, chips, pressed */
+    --rule: #cfd7e2;
+    --rule-soft: #e5eaf2;
+
+    /* 18.5 / 11.0 / 7.4 / 5.5 against white. The bottom rung is set by the
+       tinted grounds it actually lands on — units inside an input well, a
+       disabled toolbar label — not by white, where it would look too pale. */
+    --ink: #0f141c;
+    --ink-2: #333d4b;
+    --ink-3: #4c5666;
+    --ink-4: #5f6a79;
+
+    /* Port colours are wavelengths, not decoration. Darkened here to hold
+       contrast on paper — same hue, re-derived value. */
+    --optical: #0a8279;
+    --electrical: #a35f00;
+    --binary: #5a6474;
+    --symbol: #6539cc;
+    --metric: #bc2668;
+
+    --accent: var(--optical);
+    --accent-dim: #0a8279;
+    --accent-wash: rgba(10, 130, 121, 0.14);
+    --on-accent: #ffffff;   /* ink laid on an accent-filled surface */
+
+    --good: #0f7a41;
+    --warn: #8a5200;
+    --bad: #c22736;
+
+    --run-bg: #0a8279;
+    --run-bg-hover: #086f68;   /* on paper, hover adds ink rather than light */
+
+    --node-fill: #ffffff;   /* on paper a block is a card on the bed */
+    --node-hover-stroke: #94a1b4;
+    --grid-dot: #d2dae5;
+    --wire-flow: #0f141c;
+    --overlay: rgba(255, 255, 255, 0.92);
+    --scroll-thumb: #c2cbd8;
+    --scroll-thumb-hover: #a9b5c6;
+
+    /* Plot surface and the eye's density ramp. Distance from the bed is the
+       count, so paper runs bed → teal → deep teal and graphite runs the same
+       span the other way. The mid stop is placed by luminance, not by hue:
+       it sits at roughly the same fraction of each ground's span, which is
+       what keeps sparse outliers subordinate to the rails on both. */
+    --plot-bg: #ffffff;     /* a plot is on paper; hairlines then read as elsewhere */
+    --eye-0: #eaf0f7;
+    --eye-1: #7ec4bb;
+    --eye-2: #052f2b;
+
+    --sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue",
+      Arial, sans-serif;
+    --mono: ui-monospace, "SF Mono", "Cascadia Mono", "Segoe UI Mono", "Roboto Mono",
+      Menlo, Consolas, monospace;
+
+    --menubar-h: 34px;
+    --toolbar-h: 40px;
+    --statusbar-h: 24px;
+  }
+
+  /* ---- Graphite ---- */
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      color-scheme: dark;
+
+      --ground: #0b0e13;
+      --panel: #11151c;
+      --panel-2: #161b24;
+      --raised: #1c2330;
+      --rule: #232b38;
+      --rule-soft: #1a212b;
+
+      --ink: #e6ecf5;
+      --ink-2: #a8b4c6;
+      --ink-3: #8e9bb0;
+      --ink-4: #7a869b;
+
+      --optical: #22d3c5;
+      --electrical: #f0a030;
+      --binary: #7c86a0;
+      --symbol: #9b7cf6;
+      --metric: #e85d9b;
+
+      --accent-dim: #14807a;
+      --accent-wash: rgba(34, 211, 197, 0.1);
+      --on-accent: #06201e;
+
+      --good: #46d17f;
+      --warn: #f0a030;
+      --bad: #ef5d6b;
+
+      --run-bg: #189c93;
+      --run-bg-hover: #1cb3a8;
+
+      --node-fill: #161b24;
+      --node-hover-stroke: #38455a;
+      --grid-dot: #1b2230;
+      --wire-flow: #ffffff;
+      --overlay: rgba(17, 21, 28, 0.9);
+      --scroll-thumb: #2b3442;
+      --scroll-thumb-hover: #3a4557;
+
+      --plot-bg: #080b10;
+      --eye-0: #122834;
+      --eye-1: #55938f;
+      --eye-2: #eeebd9;
+    }
+  }
+
+  :root[data-theme="dark"] {
     color-scheme: dark;
 
     --ground: #0b0e13;
@@ -37,31 +163,35 @@ verdict, and DESIGN.md
     --ink-3: #8e9bb0;
     --ink-4: #7a869b;
 
-    /* Port colours are wavelengths, not decoration. */
     --optical: #22d3c5;
     --electrical: #f0a030;
     --binary: #7c86a0;
     --symbol: #9b7cf6;
     --metric: #e85d9b;
 
-    --accent: var(--optical);
     --accent-dim: #14807a;
     --accent-wash: rgba(34, 211, 197, 0.1);
+    --on-accent: #06201e;
 
     --good: #46d17f;
     --warn: #f0a030;
     --bad: #ef5d6b;
 
-    --sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue",
-      Arial, sans-serif;
-    --mono: ui-monospace, "SF Mono", "Cascadia Mono", "Segoe UI Mono", "Roboto Mono",
-      Menlo, Consolas, monospace;
+    --run-bg: #189c93;
+    --run-bg-hover: #1cb3a8;
 
-    --menubar-h: 34px;
-    --toolbar-h: 40px;
-    --statusbar-h: 24px;
+    --node-fill: #161b24;
+    --node-hover-stroke: #38455a;
+    --grid-dot: #1b2230;
+    --wire-flow: #ffffff;
+    --overlay: rgba(17, 21, 28, 0.9);
+    --scroll-thumb: #2b3442;
+    --scroll-thumb-hover: #3a4557;
 
-    --shadow-panel: 0 8px 24px -6px rgba(0, 0, 0, 0.7), 0 2px 6px -2px rgba(0, 0, 0, 0.5);
+    --plot-bg: #080b10;
+    --eye-0: #122834;
+    --eye-1: #55938f;
+    --eye-2: #eeebd9;
   }
 
   * { box-sizing: border-box; }
@@ -77,14 +207,14 @@ verdict, and DESIGN.md
   }
 
   /* Browser surfaces belong to the design too. */
-  ::selection { background: var(--accent-wash); color: #fff; }
+  ::selection { background: var(--accent-wash); color: var(--ink); }
   ::-webkit-scrollbar { width: 10px; height: 10px; }
   ::-webkit-scrollbar-track { background: var(--panel); }
   ::-webkit-scrollbar-thumb {
-    background: #2b3442; border-radius: 5px; border: 2px solid var(--panel);
+    background: var(--scroll-thumb); border-radius: 5px; border: 2px solid var(--panel);
   }
-  ::-webkit-scrollbar-thumb:hover { background: #3a4557; }
-  * { scrollbar-width: thin; scrollbar-color: #2b3442 var(--panel); }
+  ::-webkit-scrollbar-thumb:hover { background: var(--scroll-thumb-hover); }
+  * { scrollbar-width: thin; scrollbar-color: var(--scroll-thumb) var(--panel); }
 
   :focus-visible {
     outline: 2px solid var(--accent);
@@ -130,6 +260,17 @@ verdict, and DESIGN.md
   .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--good); }
   .dot.busy { background: var(--warn); }
 
+  /* Ground switch. A schematic gets read in daylight and at 2 a.m.; the tool
+     ships both and remembers nothing clever about it. */
+  .theme-btn {
+    appearance: none; background: none; border: 0; color: var(--ink-3);
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 24px; height: 22px; padding: 0; border-radius: 4px; cursor: pointer;
+  }
+  .theme-btn:hover { background: var(--raised); color: var(--ink); }
+  .theme-btn[data-mode="dark"] .sun { display: none; }
+  .theme-btn[data-mode="light"] .moon { display: none; }
+
   /* ---- Toolbar -------------------------------------------------------- */
   .toolbar {
     display: flex; align-items: center; gap: 3px;
@@ -148,10 +289,17 @@ verdict, and DESIGN.md
   .tb:disabled { color: var(--ink-4); cursor: default; }
   .tb:disabled:hover { background: none; color: var(--ink-4); }
   .tb-run {
-    background: #189c93; color: #06201e; font-weight: 600;
+    background: var(--run-bg); color: var(--on-accent); font-weight: 600;
     padding: 0 11px;
   }
-  .tb-run:hover { background: #1cb3a8; color: #06201e; }
+  .tb-run:hover { background: var(--run-bg-hover); color: var(--on-accent); }
+  /* While a run is in flight, Run is not the primary action any more — Stop is
+     — so the fill leaves rather than dimming in place. It also has to: the
+     accent fill would otherwise keep sitting under .tb:disabled's ink, which
+     outranks .tb-run's own colour and leaves the label unreadable. */
+  .tb-run:disabled, .tb-run:disabled:hover {
+    background: var(--raised); color: var(--ink-3);
+  }
   .tb-sep { width: 1px; height: 18px; background: var(--rule); margin: 0 6px; }
   .toolbar-right {
     margin-left: auto; display: flex; align-items: center; gap: 12px;
@@ -229,14 +377,14 @@ verdict, and DESIGN.md
   .canvas-grid {
     position: absolute; inset: 0;
     background-image:
-      radial-gradient(circle at 1px 1px, #1b2230 1px, transparent 0);
+      radial-gradient(circle at 1px 1px, var(--grid-dot) 1px, transparent 0);
     background-size: 22px 22px;
   }
   #graph { position: absolute; inset: 0; width: 100%; height: 100%; }
 
-  .node-box { fill: var(--panel-2); stroke: var(--rule); stroke-width: 1; }
+  .node-box { fill: var(--node-fill); stroke: var(--rule); stroke-width: 1; }
   .node-g { cursor: pointer; }
-  .node-g:hover .node-box { stroke: #38455a; }
+  .node-g:hover .node-box { stroke: var(--node-hover-stroke); }
   .node-g.selected .node-box { stroke: var(--accent); }
   .node-g.selected .node-halo { opacity: 1; }
   .node-halo {
@@ -250,10 +398,11 @@ verdict, and DESIGN.md
   .node-sub {
     fill: var(--ink-3); font-family: var(--mono); font-size: 10px;
   }
-  .port { stroke: var(--panel-2); stroke-width: 1.5; }
+  .port { stroke: var(--node-fill); stroke-width: 1.5; }
   .wire { fill: none; stroke-width: 1.75; opacity: 0.85; }
   .wire-flow {
-    fill: none; stroke-width: 1.75; stroke-dasharray: 5 9; opacity: 0;
+    fill: none; stroke: var(--wire-flow);
+    stroke-width: 1.75; stroke-dasharray: 5 9; opacity: 0;
   }
   .running .wire-flow { opacity: 0.95; animation: flow 700ms linear infinite; }
   @keyframes flow { to { stroke-dashoffset: -14; } }
@@ -262,7 +411,7 @@ verdict, and DESIGN.md
     position: absolute; left: 12px; bottom: 10px;
     display: flex; gap: 10px; align-items: center;
     padding: 5px 9px; border-radius: 5px;
-    background: rgba(17, 21, 28, 0.9); border: 1px solid var(--rule);
+    background: var(--overlay); border: 1px solid var(--rule);
     font-size: 11px; color: var(--ink-3);
   }
   .legend { display: flex; align-items: center; gap: 5px; }
@@ -323,7 +472,7 @@ verdict, and DESIGN.md
     transition: transform 130ms cubic-bezier(0.2, 0.9, 0.3, 1), background 130ms linear;
   }
   .toggle:checked { background: var(--accent-dim); border-color: var(--accent-dim); }
-  .toggle:checked::after { transform: translateX(13px); background: #06201e; }
+  .toggle:checked::after { transform: translateX(13px); background: var(--on-accent); }
 
   .insp-empty { padding: 40px 20px; text-align: center; color: var(--ink-4); font-size: 12px; }
 
@@ -413,15 +562,28 @@ verdict, and DESIGN.md
   }
 </style>
 
+<script>
+  /* The tool's own default is paper, stamped before first paint so a dark host
+     never flashes through. The stylesheet still answers prefers-color-scheme on
+     its own for the no-script case. */
+  try {
+    document.documentElement.setAttribute(
+      "data-theme", sessionStorage.getItem("oosim-theme") || "light");
+  } catch (e) {
+    document.documentElement.setAttribute("data-theme", "light");
+  }
+</script>
+
 <div class="app">
   <!-- ===== Menu bar ===== -->
   <div class="menubar">
     <div class="brand">
-      <svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-        <circle cx="8" cy="8" r="2.1" fill="#22d3c5"/>
-        <path d="M8 1.4v2.3M8 12.3v2.3M1.4 8h2.3M12.3 8h2.3" stroke="#22d3c5"
+      <svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true"
+           style="color:var(--accent)">
+        <circle cx="8" cy="8" r="2.1" fill="currentColor"/>
+        <path d="M8 1.4v2.3M8 12.3v2.3M1.4 8h2.3M12.3 8h2.3" stroke="currentColor"
               stroke-width="1.3" stroke-linecap="round" opacity=".75"/>
-        <path d="M3.4 3.4l1.6 1.6M11 11l1.6 1.6M12.6 3.4L11 5M5 11l-1.6 1.6" stroke="#22d3c5"
+        <path d="M3.4 3.4l1.6 1.6M11 11l1.6 1.6M12.6 3.4L11 5M5 11l-1.6 1.6" stroke="currentColor"
               stroke-width="1.3" stroke-linecap="round" opacity=".4"/>
       </svg>
       <span class="brand-name">OpenOpti<span>Sim</span></span>
@@ -432,6 +594,18 @@ verdict, and DESIGN.md
     <button class="menu-item">View</button>
     <button class="menu-item">Help</button>
     <div class="menubar-right">
+      <button class="theme-btn" id="theme-btn" data-mode="light" type="button"
+              title="Switch to graphite" aria-label="Switch to graphite">
+        <svg class="sun" width="14" height="14" viewBox="0 0 16 16" fill="none"
+             stroke="currentColor" stroke-width="1.3" stroke-linecap="round" aria-hidden="true">
+          <circle cx="8" cy="8" r="3.1"/>
+          <path d="M8 1v1.6M8 13.4V15M1 8h1.6M13.4 8H15M3.1 3.1l1.1 1.1M11.8 11.8l1.1 1.1M12.9 3.1l-1.1 1.1M4.2 11.8l-1.1 1.1"/>
+        </svg>
+        <svg class="moon" width="14" height="14" viewBox="0 0 16 16" fill="none"
+             stroke="currentColor" stroke-width="1.3" stroke-linejoin="round" aria-hidden="true">
+          <path d="M13.4 9.8A5.9 5.9 0 016.2 2.6a5.9 5.9 0 107.2 7.2z"/>
+        </svg>
+      </button>
       <div class="kernel"><span class="dot" id="kernel-dot"></span><span id="kernel-text">engine ready</span></div>
       <span class="num" style="color:var(--ink-4)">ook_link.oosim</span>
     </div>
@@ -615,10 +789,12 @@ verdict, and DESIGN.md
 (() => {
   "use strict";
   const DATA = JSON.parse(document.getElementById("oosim-data").textContent);
-  const PORT_COLOR = {
-    optical: "#22d3c5", electrical: "#f0a030", binary: "#7c86a0",
-    symbol: "#9b7cf6", metric: "#e85d9b"
-  };
+
+  /* Port colours are never written here — the stylesheet owns every value, and
+     markup refers to it by port type so a ground switch needs no repaint. */
+  const PORT_TYPES = ["optical", "electrical", "binary", "symbol", "metric"];
+  const portVar = (t) => `var(--${PORT_TYPES.includes(t) ? t : "binary"})`;
+
   const CATEGORY_ORDER = [
     "Optical Sources", "Electrical Sources", "Modulators", "Fiber",
     "Amplifiers", "Passive", "Receivers", "Electrical", "Measurements"
@@ -715,7 +891,7 @@ verdict, and DESIGN.md
         b.draggable = true;
         b.dataset.type = key;
         b.innerHTML =
-          `<span class="swatch" style="background:${PORT_COLOR[CATEGORY_PORT[cat]] || "#7c86a0"}"></span>
+          `<span class="swatch" style="background:${portVar(CATEGORY_PORT[cat])}"></span>
            <span class="nm">${escapeHtml(m.name)}</span>`;
         b.addEventListener("click", () => showManifest(key));
         list.appendChild(b);
@@ -770,8 +946,8 @@ verdict, and DESIGN.md
       const b = portPos(e.to[0], e.to[1]);
       const dx = Math.max(34, Math.abs(b.x - a.x) * 0.45);
       const d = `M${a.x} ${a.y} C${a.x + dx} ${a.y} ${b.x - dx} ${b.y} ${b.x} ${b.y}`;
-      el("path", { d, class: "wire", stroke: PORT_COLOR[e.type] }, wireLayer);
-      el("path", { d, class: "wire-flow", stroke: "#ffffff" }, wireLayer);
+      el("path", { d, class: "wire", style: `stroke:${portVar(e.type)}` }, wireLayer);
+      el("path", { d, class: "wire-flow" }, wireLayer);
     }
 
     for (const n of NODES) {
@@ -787,7 +963,7 @@ verdict, and DESIGN.md
       const { inputs, outputs } = portsOf(n);
       const stripType = outputs[0] ? outputs[0][1] : (inputs[0] ? inputs[0][1] : "optical");
       el("rect", { x: n.x, y: n.y, width: 3, height: NODE_H, rx: 1.5,
-                   fill: PORT_COLOR[stripType], class: "node-strip" }, g);
+                   style: `fill:${portVar(stripType)}`, class: "node-strip" }, g);
 
       // The box is fixed width, so long names are clipped rather than allowed to
       // spill across neighbouring blocks; the full name lives in the tooltip.
@@ -799,13 +975,13 @@ verdict, and DESIGN.md
 
       inputs.forEach(([name, type], i) => {
         const y = n.y + (NODE_H * (i + 1)) / (inputs.length + 1);
-        const c = el("circle", { cx: n.x, cy: y, r: 4, fill: PORT_COLOR[type],
+        const c = el("circle", { cx: n.x, cy: y, r: 4, style: `fill:${portVar(type)}`,
                                  class: "port" }, g);
         el("title", {}, c).textContent = `${name} · ${type}`;
       });
       outputs.forEach(([name, type], i) => {
         const y = n.y + (NODE_H * (i + 1)) / (outputs.length + 1);
-        const c = el("circle", { cx: n.x + NODE_W, cy: y, r: 4, fill: PORT_COLOR[type],
+        const c = el("circle", { cx: n.x + NODE_W, cy: y, r: 4, style: `fill:${portVar(type)}`,
                                  class: "port" }, g);
         el("title", {}, c).textContent = `${name} · ${type}`;
       });
@@ -863,7 +1039,7 @@ verdict, and DESIGN.md
          ${ports.map(([n, t, dir]) => `
            <div class="stat">
              <dt style="display:flex;align-items:center;gap:6px">
-               <span style="width:6px;height:6px;border-radius:50%;background:${PORT_COLOR[t]};
+               <span style="width:6px;height:6px;border-radius:50%;background:${portVar(t)};
                             display:inline-block"></span>${escapeHtml(n)}
              </dt>
              <dd style="color:var(--ink-4)">${dir} · ${escapeHtml(t)}</dd>
@@ -874,6 +1050,21 @@ verdict, and DESIGN.md
 
   const showNode = (n) => renderInspector(n.type, n.label, VALUES[n.id]);
   const showManifest = (key) => renderInspector(key, "", null);
+
+  /* ---------- Plot colours ------------------------------------------------
+     A canvas has no cascade, so the plots read the same tokens as everything
+     else at draw time and are redrawn when the ground changes. Nothing below
+     this line names a colour. */
+  const tok = (name) =>
+    getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+
+  function rgbOf(hex) {
+    const h = hex.replace("#", "");
+    const n = h.length === 3 ? h.split("").map((c) => c + c).join("") : h;
+    return [parseInt(n.slice(0, 2), 16), parseInt(n.slice(2, 4), 16), parseInt(n.slice(4, 6), 16)];
+  }
+  const alpha = (hex, a) => `rgba(${rgbOf(hex).join(",")},${a})`;
+  const MONO_10 = "10px ui-monospace, Menlo, Consolas, monospace";
 
   /* ---------- Eye diagram ------------------------------------------------ */
   function sizeCanvas(c) {
@@ -893,7 +1084,7 @@ verdict, and DESIGN.md
     const counts = DATA.eye.counts;
     const rows = counts.length, cols = counts[0].length;
 
-    ctx.fillStyle = "#080b10";
+    ctx.fillStyle = tok("--plot-bg");
     ctx.fillRect(0, 0, w, h);
 
     const padL = 44, padB = 20, padT = 6, padR = 6;
@@ -903,17 +1094,25 @@ verdict, and DESIGN.md
     for (const row of counts) for (const v of row) if (v > max) max = v;
     const norm = (v) => Math.pow(v / max, 0.42);   // compress the rails' dominance
 
+    // Density ramp: bed → C-band cyan → far stop. Distance from the plot
+    // background is the count, so it reads the same way on either ground.
+    const c0 = rgbOf(tok("--eye-0")), c1 = rgbOf(tok("--eye-1")), c2 = rgbOf(tok("--eye-2"));
+    const KNEE = 0.55;
+    const LUT = new Array(256);
+    for (let i = 0; i < 256; i++) {
+      const t = i / 255;
+      const [a, b, u] = t < KNEE ? [c0, c1, t / KNEE] : [c1, c2, (t - KNEE) / (1 - KNEE)];
+      LUT[i] = `rgb(${Math.round(a[0] + (b[0] - a[0]) * u)},` +
+               `${Math.round(a[1] + (b[1] - a[1]) * u)},` +
+               `${Math.round(a[2] + (b[2] - a[2]) * u)})`;
+    }
+
     const cw = pw / cols, chh = ph / rows;
     for (let r = 0; r < rows; r++) {
       for (let k = 0; k < cols; k++) {
         const v = counts[r][k];
         if (!v) continue;
-        const t = norm(v);
-        // graphite → C-band cyan → white: brightness is density
-        const rr = Math.round(18 + t * t * 220);
-        const gg = Math.round(40 + t * 195);
-        const bb = Math.round(52 + t * 165);
-        ctx.fillStyle = `rgb(${rr},${gg},${bb})`;
+        ctx.fillStyle = LUT[Math.round(norm(v) * 255)];
         ctx.fillRect(padL + k * cw, padT + ph - (r + 1) * chh, Math.ceil(cw) + 0.5,
                      Math.ceil(chh) + 0.5);
       }
@@ -925,24 +1124,24 @@ verdict, and DESIGN.md
 
     // Decision threshold and sampling instant — the two lines that explain the number.
     const thrUA = DATA.measurement.threshold * 1e6;
-    ctx.strokeStyle = "rgba(232,93,155,0.85)";
+    ctx.strokeStyle = alpha(tok("--metric"), 0.85);
     ctx.setLineDash([4, 4]); ctx.lineWidth = 1;
     ctx.beginPath(); ctx.moveTo(padL, yFor(thrUA)); ctx.lineTo(w - padR, yFor(thrUA)); ctx.stroke();
 
     const frac = (DATA.measurement.sample_offset + 0.5) / DATA.context.samples_per_symbol;
+    ctx.strokeStyle = alpha(tok("--electrical"), 0.6);
     for (const cx of [padL + pw * frac / 2, padL + pw * (0.5 + frac / 2)]) {
-      ctx.strokeStyle = "rgba(240,160,48,0.55)";
       ctx.beginPath(); ctx.moveTo(cx, padT); ctx.lineTo(cx, padT + ph); ctx.stroke();
     }
     ctx.setLineDash([]);
 
     // Axes
-    ctx.strokeStyle = "#232b38"; ctx.lineWidth = 1;
+    ctx.strokeStyle = tok("--rule"); ctx.lineWidth = 1;
     ctx.beginPath(); ctx.moveTo(padL, padT); ctx.lineTo(padL, padT + ph);
     ctx.lineTo(w - padR, padT + ph); ctx.stroke();
 
-    ctx.fillStyle = "#8e9bb0";
-    ctx.font = "10px ui-monospace, Menlo, Consolas, monospace";
+    ctx.fillStyle = tok("--ink-3");
+    ctx.font = MONO_10;
     ctx.textAlign = "right"; ctx.textBaseline = "middle";
     for (const v of [a0, (a0 + a1) / 2, a1]) ctx.fillText(v.toFixed(0), padL - 6, yFor(v));
     ctx.save(); ctx.translate(11, padT + ph / 2); ctx.rotate(-Math.PI / 2);
@@ -959,7 +1158,7 @@ verdict, and DESIGN.md
     const c = $("#sens-canvas");
     if (!c.parentElement.offsetWidth) return;
     const { ctx, w, h } = sizeCanvas(c);
-    ctx.fillStyle = "#080b10"; ctx.fillRect(0, 0, w, h);
+    ctx.fillStyle = tok("--plot-bg"); ctx.fillRect(0, 0, w, h);
 
     const pts = DATA.sensitivity;
     const padL = 46, padB = 22, padT = 10, padR = 12;
@@ -972,38 +1171,40 @@ verdict, and DESIGN.md
       return padT + ph - ((l - lo) / (hi - lo)) * ph;
     };
 
-    ctx.strokeStyle = "#1a212b"; ctx.lineWidth = 1;
+    const good = tok("--good"), optical = tok("--optical");
+
+    ctx.strokeStyle = tok("--rule-soft"); ctx.lineWidth = 1;
+    ctx.font = MONO_10;
     for (let e = hi; e >= lo; e -= 2) {
       const y = Y(Math.pow(10, e));
       ctx.beginPath(); ctx.moveTo(padL, y); ctx.lineTo(w - padR, y); ctx.stroke();
-      ctx.fillStyle = "#7a869b";
-      ctx.font = "10px ui-monospace, Menlo, Consolas, monospace";
+      ctx.fillStyle = tok("--ink-4");
       ctx.textAlign = "right"; ctx.textBaseline = "middle";
       ctx.fillText("1e" + e, padL - 6, y);
     }
 
     // The Q = 6 line: the operating point everybody quotes.
-    ctx.strokeStyle = "rgba(70,209,127,0.5)"; ctx.setLineDash([4, 4]);
+    ctx.strokeStyle = alpha(good, 0.55); ctx.setLineDash([4, 4]);
     const yQ6 = Y(9.87e-10);
     ctx.beginPath(); ctx.moveTo(padL, yQ6); ctx.lineTo(w - padR, yQ6); ctx.stroke();
     ctx.setLineDash([]);
-    ctx.fillStyle = "#46d17f"; ctx.textAlign = "left"; ctx.textBaseline = "bottom";
+    ctx.fillStyle = good; ctx.textAlign = "left"; ctx.textBaseline = "bottom";
     ctx.fillText("Q = 6", padL + 5, yQ6 - 3);
 
-    ctx.strokeStyle = "#22d3c5"; ctx.lineWidth = 1.75; ctx.beginPath();
+    ctx.strokeStyle = optical; ctx.lineWidth = 1.75; ctx.beginPath();
     pts.forEach((p, i) => (i ? ctx.lineTo(X(p.launch_dbm), Y(p.ber))
                              : ctx.moveTo(X(p.launch_dbm), Y(p.ber))));
     ctx.stroke();
-    ctx.fillStyle = "#22d3c5";
+    ctx.fillStyle = optical;
     for (const p of pts) {
       ctx.beginPath(); ctx.arc(X(p.launch_dbm), Y(p.ber), 2.4, 0, Math.PI * 2); ctx.fill();
     }
 
-    ctx.strokeStyle = "#232b38"; ctx.lineWidth = 1;
+    ctx.strokeStyle = tok("--rule"); ctx.lineWidth = 1;
     ctx.beginPath(); ctx.moveTo(padL, padT); ctx.lineTo(padL, padT + ph);
     ctx.lineTo(w - padR, padT + ph); ctx.stroke();
 
-    ctx.fillStyle = "#8e9bb0"; ctx.textAlign = "center"; ctx.textBaseline = "top";
+    ctx.fillStyle = tok("--ink-3"); ctx.textAlign = "center"; ctx.textBaseline = "top";
     for (const d of [x0, (x0 + x1) / 2, x1]) ctx.fillText(d.toFixed(0), X(d), padT + ph + 6);
     ctx.fillText("launch power (dBm)", padL + pw / 2, padT + ph + 6 + 11);
   }
@@ -1045,16 +1246,39 @@ verdict, and DESIGN.md
   }
 
   /* ---------- Interaction ------------------------------------------------ */
+  function redrawActivePlot() {
+    const active = document.querySelector('.pane[data-active="true"]');
+    if (!active) return;
+    if (active.dataset.pane === "eye") drawEye();
+    if (active.dataset.pane === "sens") drawSens();
+  }
+
   document.querySelectorAll(".tab").forEach((tab) => {
     tab.addEventListener("click", () => {
       document.querySelectorAll(".tab").forEach((t) =>
         t.setAttribute("aria-selected", String(t === tab)));
       document.querySelectorAll(".pane").forEach((p) =>
         p.dataset.active = String(p.dataset.pane === tab.dataset.pane));
-      if (tab.dataset.pane === "eye") drawEye();
-      if (tab.dataset.pane === "sens") drawSens();
+      redrawActivePlot();
     });
   });
+
+  /* Ground switch. The DOM and SVG follow the cascade on their own; only the
+     two canvases have to be told. */
+  const themeBtn = $("#theme-btn");
+  function applyTheme(mode) {
+    document.documentElement.setAttribute("data-theme", mode);
+    themeBtn.dataset.mode = mode;
+    const next = mode === "dark" ? "paper" : "graphite";
+    themeBtn.title = "Switch to " + next;
+    themeBtn.setAttribute("aria-label", "Switch to " + next);
+    try { sessionStorage.setItem("oosim-theme", mode); } catch (e) { /* sandboxed */ }
+    redrawActivePlot();
+  }
+  themeBtn.addEventListener("click", () =>
+    applyTheme(themeBtn.dataset.mode === "dark" ? "light" : "dark"));
+  applyTheme(
+    document.documentElement.getAttribute("data-theme") === "dark" ? "dark" : "light");
 
   let zoom = 100;
   const setZoom = (z) => {
@@ -1109,11 +1333,7 @@ verdict, and DESIGN.md
   let resizeTimer;
   window.addEventListener("resize", () => {
     clearTimeout(resizeTimer);
-    resizeTimer = setTimeout(() => {
-      const active = document.querySelector('.pane[data-active="true"]').dataset.pane;
-      if (active === "eye") drawEye();
-      if (active === "sens") drawSens();
-    }, 90);
+    resizeTimer = setTimeout(redrawActivePlot, 90);
   });
 })();
 </script>

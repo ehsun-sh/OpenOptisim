@@ -25,11 +25,18 @@ legible before it is powerful.
 ## The scene
 
 A desk, two monitors, a long working session. The engineer is *iterating*: change a parameter,
-run, look at the eye, change it again. Dozens of times an hour. Often at night, often in a dim
-room. Frequently alongside a datasheet PDF and a terminal.
+run, look at the eye, change it again. Dozens of times an hour. Sometimes at night in a dim room,
+just as often in a lit office. Frequently alongside a datasheet PDF and a terminal.
 
-That scene decides several things. The interface is **dark by default** — it sits next to a
-terminal for hours. It is **dense** — screen space spent on decoration is screen space not spent
+That scene decides several things. The interface ships **two grounds and defaults to the light
+one** — a schematic is a document before it is a screen, and the plots leave here for reports,
+theses and papers, where a screenshot off a black canvas is the wrong artefact. Graphite is one
+click away for the night session beside a terminal. Neither is a skin over the other: the port
+hues are the identity and survive both, but their values are re-derived per ground rather than
+inverted, and the eye diagram's density ramp is rebuilt so that in both cases *distance from the
+page* means count.
+
+The interface is also **dense** — screen space spent on decoration is screen space not spent
 on the schematic or the plot. And the run/inspect cycle must feel **instant**, because it happens
 constantly and any latency compounds.
 
