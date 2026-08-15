@@ -1,0 +1,70 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "oosim"
+version = "0.0.1.dev0"
+description = "Open-source simulator for optical communication links and photonic systems"
+readme = "README.md"
+requires-python = ">=3.11"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
+authors = [{ name = "Ehsan Shahmohammadi" }]
+keywords = ["photonics", "optical-communications", "simulation", "fiber-optics", "dsp"]
+classifiers = [
+    "Development Status :: 2 - Pre-Alpha",
+    "Intended Audience :: Science/Research",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Scientific/Engineering :: Physics",
+]
+
+# NOTE: FFTW is deliberately absent. It is GPL-2.0-or-later; linking it (directly
+# or via pyFFTW) would force this project to GPL. numpy/scipy use pocketfft (BSD).
+dependencies = ["numpy>=1.26"]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "mypy>=1.11", "ruff>=0.6"]
+
+[project.urls]
+Homepage = "https://github.com/ehsun-sh/OpenOptisim"
+Documentation = "https://github.com/ehsun-sh/OpenOptisim/blob/main/docs/ARCHITECTURE.md"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/oosim"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q --strict-markers"
+
+[tool.ruff]
+line-length = 100
+src = ["src", "tests"]
+# Prose documents are written for readers, not for the formatter: aligned comments
+# in illustrative snippets are deliberate. Ruff owns the code, not the docs.
+extend-exclude = ["*.md"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "N", "UP", "B", "SIM", "RUF"]
+
+[tool.ruff.lint.per-file-ignores]
+# N803/N806: physics code uses standard symbol names (Ex, Ey, N, T0, L_D) that do
+#   not fit PEP 8 casing. Readability against the literature wins over convention.
+# RUF012: `inputs`/`outputs` are class-level port declarations that Component.__init__
+#   copies onto each instance, so a component with a configurable port count can
+#   rebind its own. Annotating them ClassVar would forbid exactly that.
+"src/oosim/**" = ["N803", "N806", "RUF012"]
+"tests/**" = ["N802", "N803", "N806"]
+
+[tool.mypy]
+python_version = "3.11"
+files = ["src", "tests"]
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+warn_unreachable = true
+no_implicit_optional = true
+strict_equality = true

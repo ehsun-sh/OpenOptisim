@@ -2,23 +2,71 @@
 
 **An open-source, modular simulator for optical communication links and photonic systems.**
 
-![status](https://img.shields.io/badge/status-design%20phase-orange)
+[![CI](https://github.com/ehsun-sh/OpenOptisim/actions/workflows/ci.yml/badge.svg)](https://github.com/ehsun-sh/OpenOptisim/actions/workflows/ci.yml)
+![status](https://img.shields.io/badge/status-pre--alpha-orange)
 ![license](https://img.shields.io/badge/license-Apache--2.0-blue)
 ![python](https://img.shields.io/badge/python-3.11%2B-blue)
 
 ---
 
-> ### ⚠️ Project status: design phase — no code yet
+> ### ⚠️ Project status: pre-alpha, Phase 0
 >
-> This repository currently contains **the architecture and roadmap only**. There is no working
-> simulator here. It is published early so that the design can be reviewed and criticised before
-> implementation starts — which is the cheapest possible time to find out that something is wrong.
+> The engine core exists and is tested: simulation context, multi-band optical signal model,
+> typed ports, component/parameter system, and the block-mode scheduler. Four components are
+> implemented — CW laser, fiber (attenuation only), combiner/attenuator, power meter — and the
+> physics is validated against closed-form results in CI.
 >
-> If you are here to evaluate the idea, the document to read is
-> **[the architecture & roadmap](docs/ARCHITECTURE.md)**.
-> Feedback on §3 (data model) and §4 (execution engine) is worth more than feedback on anything else.
+> **Not implemented yet:** modulators, photodetectors, dispersion, SSFM/nonlinearity, DSP,
+> BER/eye analysis, and the GUI. Those are Phases 1–2; see the [roadmap](#roadmap).
+>
+> This is not yet a useful simulator. It is a foundation with the expensive decisions made and
+> tested. Criticism of those decisions is worth more right now than any feature —
+> **[the architecture document](docs/ARCHITECTURE.md)** is where they are argued out.
 
 ---
+
+## Try it
+
+```bash
+pip install -e ".[dev]" && pytest
+```
+
+```python
+from oosim import SimulationContext, Graph
+from oosim.components import CWLaser, Combiner, Fiber, PowerMeter
+
+ctx = SimulationContext(bit_rate=10e9, samples_per_symbol=16, sequence_length=64)
+g = Graph(ctx)
+
+laser = g.add(CWLaser(power=0.0, wavelength=1550.0))  # 0 dBm
+fiber = g.add(Fiber(length=80.0, attenuation=0.2))  # 80 km, 0.2 dB/km
+meter = g.add(PowerMeter())
+g.chain(laser, fiber, meter)
+
+print(g.run()[meter])  # PowerReading(-16.000 dBm; 1550.00nm=-16.000dBm)
+```
+
+Two carriers stay two independently sampled bands, which is the point of the signal model:
+
+```python
+g = Graph(ctx)
+ch1 = g.add(CWLaser(wavelength=1550.0, label="ch1"))
+ch2 = g.add(CWLaser(wavelength=1551.0, label="ch2"))
+mux = g.add(Combiner(2))
+fiber = g.add(Fiber(length=80.0, attenuation=0.2))
+meter = g.add(PowerMeter())
+
+g.connect(ch1, mux["in0"])
+g.connect(ch2, mux["in1"])
+g.chain(mux, fiber, meter)
+
+print(g.run()[meter])
+# PowerReading(-12.990 dBm; 1551.00nm=-16.000dBm, 1550.00nm=-16.000dBm)
+```
+
+Each band carries its own centre frequency, so channel spacing never enters the sample rate.
+Put those two lasers 6 THz apart instead of 125 GHz and nothing about the run changes — which is
+exactly what a single-carrier signal model cannot do.
 
 ## What this is
 
@@ -109,28 +157,38 @@ reachable from Python, it does not exist.**
 
 ## The core data model
 
-The part most worth reviewing. An optical signal is not one array of numbers:
+The part most worth reviewing — see [`src/oosim/signals.py`](src/oosim/signals.py). An optical
+signal is not one array of numbers:
 
 ```python
-@dataclass
+@dataclass(frozen=True)
 class Band:
     """One sampled band: complex envelope in two orthogonal polarizations (Jones vector)."""
-    Ex: np.ndarray   # complex64, shape (N,)
-    Ey: np.ndarray
-    f0: float        # band center frequency [Hz]
-    fs: float        # band sample rate [Hz]
 
-@dataclass
+    Ex: np.ndarray  # complex64, shape (N,), read-only
+    Ey: np.ndarray
+    f0: float  # band centre frequency [Hz]
+    fs: float  # band sample rate [Hz]
+
+
+@dataclass(frozen=True)
 class NoiseBin:
     """Spectrally-resolved noise, carried separately from the sampled bands."""
-    f_start: float; f_end: float
-    psd_x: float;   psd_y: float      # [W/Hz] per polarization
 
-@dataclass
+    f_start: float
+    f_end: float
+    psd_x: float  # [W/Hz] per polarization
+    psd_y: float
+
+
+@dataclass(frozen=True)
 class OpticalSignal:
-    bands: list[Band]
-    noise: list[NoiseBin]
+    bands: tuple[Band, ...]
+    noise: tuple[NoiseBin, ...]
 ```
+
+Fields are `sqrt(W)`, so instantaneous power is `|Ex|**2 + |Ey|**2`. Arrays are read-only, which
+is what lets metadata-only blocks share buffers instead of copying a span at a time.
 
 Global run parameters (bit rate, oversampling, sequence length, RNG seed) live in a shared
 `SimulationContext`, not in individual signals — so blocks cannot silently disagree about the
@@ -140,7 +198,7 @@ time window, and results are reproducible.
 
 | Phase | Scope | Estimate¹ |
 | :--- | :--- | :--- |
-| **0 — Foundations** | Signal model, context, port types, component base, scheduler, project format, CI | ~1 month |
+| **0 — Foundations** *(in progress)* | ✅ Signal model, context, port types, component base, scheduler, CI · ⬜ project file format, sweeps | ~1 month |
 | **1 — MVP: linear link** | PRBS → NRZ → CW laser → MZM → fiber (α + CD) → PIN → eye/BER. **Python only, no GUI.** Full analytical validation suite. | ~2–3 months |
 | **1.5 — Nonlinear & amplified** | Adaptive-step SSFM, Kerr, PMD, EDFA (gain/NF/saturation/ASE), APD | ~2 months |
 | **2 — GUI & DSP** | Graph editor, plots, pulse shaping, FIR, equalizers (LMS/CMA), OSA, constellation, sweeps | ~3–4 months |
@@ -154,19 +212,23 @@ are all pushed out of it. Shipping a *validated* linear link quickly matters mor
 
 ## Validation
 
-Every physics block ships with a test against a closed-form result, run in CI:
+Every physics block ships with a test against a closed-form result, run in CI
+([`tests/test_physics.py`](tests/test_physics.py)):
 
-| Case | Expected |
-| :--- | :--- |
-| Lossless, dispersionless, linear fiber | Output bit-identical to input |
-| Attenuation only | `P_out = P_in · exp(-αL)` |
-| Gaussian pulse, CD only | `T(z) = T₀·√(1 + (z/L_D)²)`, `L_D = T₀²/\|β₂\|` |
-| Lossless SSFM | Energy conserved (Parseval) |
-| Fundamental soliton (N=1) | Envelope magnitude invariant along propagation |
-| Ideal push-pull MZM | `P_out/P_in = cos²(πV / 2V_π)` |
-| PIN detector | `I = R·P`; shot `σ² = 2qIB`; thermal `σ² = 4kTB/R_L` |
-| Ideal OOK, Gaussian noise | `BER = ½·erfc(Q/√2)` |
-| EDFA | `P_ASE = 2·n_sp·hν·(G−1)·B_o` |
+| Case | Expected | |
+| :--- | :--- | :-- |
+| Attenuation | `P_out = P_in · 10^(-αL/10)` | ✅ |
+| Cascaded spans | Loss is additive in dB | ✅ |
+| Source power | Independent of the simulated time window | ✅ |
+| Phase noise | Broadens the line, conserves average power | ✅ |
+| Multi-carrier | Channels stay separate bands; spacing does not drive `Fs` | ✅ |
+| Gaussian pulse, CD only | `T(z) = T₀·√(1 + (z/L_D)²)`, `L_D = T₀²/\|β₂\|` | ⬜ |
+| Lossless SSFM | Energy conserved (Parseval) | ⬜ |
+| Fundamental soliton (N=1) | Envelope magnitude invariant along propagation | ⬜ |
+| Ideal push-pull MZM | `P_out/P_in = cos²(πV / 2V_π)` | ⬜ |
+| PIN detector | `I = R·P`; shot `σ² = 2qIB`; thermal `σ² = 4kTB/R_L` | ⬜ |
+| Ideal OOK, Gaussian noise | `BER = ½·erfc(Q/√2)` | ⬜ |
+| EDFA | `P_ASE = 2·n_sp·hν·(G−1)·B_o` | ⬜ |
 
 Component models are derived from published literature and standards (Agrawal, *Nonlinear Fiber
 Optics*; ITU-T G.652 / G.694.1; relevant IEEE 802.3 clauses), cited in each component's
@@ -174,17 +236,26 @@ docstring — never from inspection of commercial tools.
 
 ## Contributing
 
-Not open for code contributions yet — there is no code. What is genuinely useful right now:
+The core is small enough that changing it is still cheap, which makes right now the most useful
+time to push back on it. Most valuable first:
 
-* **Review the [architecture document](docs/ARCHITECTURE.md)**, especially the
-  signal data model (§3) and the execution engine (§4). If something there is wrong, now is when
-  it is cheap to fix.
+* **Review the signal model and scheduler** — [`src/oosim/signals.py`](src/oosim/signals.py),
+  [`src/oosim/graph.py`](src/oosim/graph.py), and §3–§4 of the
+  [architecture document](docs/ARCHITECTURE.md). If something there is wrong, it is far cheaper
+  to fix now than after fifty components depend on it.
 * **Tell us if this duplicates existing work.** If a project already does this well, that is worth
   knowing before several months go into it.
 * **Describe your use case.** Which components, which measurements, what you currently use and
   what frustrates you about it.
+* **Add a component.** A component is a Python class with declared parameters and typed ports —
+  see [`src/oosim/components/`](src/oosim/components/) for the pattern. Every physics block needs
+  a test against a closed-form result; a component without one will not be merged.
 
 Open an issue for any of the above.
+
+```bash
+pip install -e ".[dev]" && ruff check . && ruff format --check . && mypy && pytest
+```
 
 ## License
 
