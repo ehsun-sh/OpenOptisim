@@ -76,6 +76,8 @@ _TO_SI: dict[str, Callable[[float], float]] = {
     "dB/km": lambda x: x * 1e-3,  # -> dB/m (still logarithmic, per metre)
     # Dispersion: ps/(nm*km) -> s/m^2
     "ps/nm/km": lambda x: x * 1e-6,
+    # Nonlinearity: 1/(W*km) -> 1/(W*m)
+    "1/W/km": lambda x: x * 1e-3,
     # Length
     "m": lambda x: x,
     "km": lambda x: x * 1e3,
@@ -101,6 +103,7 @@ _FROM_SI: dict[str, Callable[[float], float]] = {
     "dB": linear_to_db,
     "dB/km": lambda x: x * 1e3,
     "ps/nm/km": lambda x: x * 1e6,
+    "1/W/km": lambda x: x * 1e3,
     "m": lambda x: x,
     "km": lambda x: x * 1e-3,
     "nm": lambda x: x * 1e9,

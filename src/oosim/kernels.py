@@ -13,6 +13,8 @@ not be introduced: it is GPL-2.0-or-later, and linking it — directly or throug
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 import numpy as np
 
 from .units import C_LIGHT
@@ -71,6 +73,144 @@ def propagate_dispersion(
     omega = angular_frequency_grid(field.shape[0], sample_rate)
     transfer = np.exp(0.5j * beta2 * omega**2 * distance)
     return np.fft.ifft(np.fft.fft(field.astype(np.complex128)) * transfer)
+
+
+def soliton_peak_power(beta2: float, gamma: float, width: float, order: int = 1) -> float:
+    """Peak power of a soliton of the given order [W].
+
+    A sech pulse of width ``T0`` is a soliton of order N when
+    ``N**2 = gamma * P0 * T0**2 / |beta2|``. The fundamental (N = 1) is the case
+    where the chirp Kerr imposes exactly cancels the chirp dispersion imposes,
+    so the pulse propagates unchanged — which makes it the sharpest available
+    check that both effects are implemented correctly and with the right signs
+    relative to each other.
+
+    Requires anomalous dispersion (``beta2 < 0``); in normal dispersion the two
+    effects add instead of cancelling and no bright soliton exists.
+    """
+    if beta2 >= 0.0:
+        raise ValueError(f"bright solitons need anomalous dispersion (beta2 < 0), got {beta2}")
+    if gamma <= 0.0:
+        raise ValueError(f"gamma must be positive, got {gamma}")
+    return order**2 * abs(beta2) / (gamma * width**2)
+
+
+def soliton_period(beta2: float, width: float) -> float:
+    """Soliton period ``z0 = (pi/2) * T0**2 / |beta2|`` [m]."""
+    return 0.5 * np.pi * width**2 / abs(beta2)
+
+
+def attenuation_db_per_m_to_alpha(attenuation_db_per_m: float) -> float:
+    """Convert a loss coefficient in dB/m to the power attenuation ``alpha`` [1/m].
+
+    ``P(z) = P(0) * exp(-alpha * z)``, so ``alpha = ln(10)/10 * dB per metre``.
+    """
+    return attenuation_db_per_m * np.log(10.0) / 10.0
+
+
+@dataclass(frozen=True)
+class PropagationDiagnostics:
+    """What the propagator actually did, so accuracy can be audited.
+
+    A split-step result is only as good as its step size, and a fixed-step run
+    produces answers that look plausible and are wrong. Reporting the step count
+    and the largest nonlinear phase per step means the number can be checked
+    rather than trusted.
+    """
+
+    steps: int
+    distance: float
+    shortest_step: float
+    longest_step: float
+    peak_nonlinear_phase: float
+    """Largest nonlinear phase rotation applied in any single step [rad]."""
+
+    def __repr__(self) -> str:
+        return (
+            f"PropagationDiagnostics({self.steps} steps over {self.distance / 1e3:.1f} km, "
+            f"max phase {self.peak_nonlinear_phase:.4f} rad)"
+        )
+
+
+def propagate_ssfm(
+    field: np.ndarray,
+    sample_rate: float,
+    *,
+    beta2: float,
+    gamma: float,
+    alpha: float,
+    distance: float,
+    max_nonlinear_phase: float = 0.005,
+    max_step: float | None = None,
+) -> tuple[np.ndarray, PropagationDiagnostics]:
+    """Solve the nonlinear Schrödinger equation by symmetric split-step Fourier.
+
+    ``dA/dz = -(alpha/2) A - (i beta2 / 2) d2A/dT2 + i gamma |A|**2 A``
+
+    Each step applies half the linear operator in the frequency domain, the full
+    nonlinear phase in the time domain, then the other half linear operator. The
+    symmetric ordering makes the local error third order in the step size rather
+    than second.
+
+    **The step size is adaptive, and that is not optional.** The nonlinear term
+    is a phase rotation proportional to instantaneous power, so a step long
+    enough to rotate the peak by an appreciable angle stops commuting with
+    dispersion in a way that quietly changes the answer. Steps here are bounded
+    so the largest nonlinear rotation per step stays under
+    ``max_nonlinear_phase``; the default of 5 mrad is conservative. Because the
+    bound is recomputed from the current peak power, steps lengthen naturally as
+    the pulse loses power to attenuation.
+
+    Returns the propagated field and :class:`PropagationDiagnostics`.
+    """
+    if distance < 0.0:
+        raise ValueError(f"distance must be non-negative, got {distance}")
+    if max_nonlinear_phase <= 0.0:
+        raise ValueError(f"max_nonlinear_phase must be positive, got {max_nonlinear_phase}")
+
+    a = field.astype(np.complex128, copy=True)
+    if distance == 0.0:
+        return a, PropagationDiagnostics(0, 0.0, 0.0, 0.0, 0.0)
+
+    omega = angular_frequency_grid(field.shape[0], sample_rate)
+    dispersion_operator = 0.5j * beta2 * omega**2
+    ceiling = max_step if max_step is not None else distance
+
+    travelled = 0.0
+    steps = 0
+    shortest = np.inf
+    longest = 0.0
+    peak_phase = 0.0
+
+    while travelled < distance:
+        remaining = distance - travelled
+        step = min(ceiling, remaining)
+        peak_power = float(np.max(np.abs(a) ** 2))
+        if gamma != 0.0 and peak_power > 0.0:
+            step = min(step, max_nonlinear_phase / (abs(gamma) * peak_power))
+        # A step can only be shortened to the point where it still advances;
+        # without this an extreme peak power would stall the loop.
+        step = max(min(step, remaining), remaining * 1e-9)
+
+        half = np.exp(-alpha * step / 4.0 + dispersion_operator * (step / 2.0))
+        a = np.fft.ifft(np.fft.fft(a) * half)
+        phase = gamma * np.abs(a) ** 2 * step
+        a = a * np.exp(1j * phase)
+        a = np.fft.ifft(np.fft.fft(a) * half)
+
+        travelled += step
+        steps += 1
+        shortest = min(shortest, step)
+        longest = max(longest, step)
+        peak_phase = max(peak_phase, float(np.max(np.abs(phase))))
+
+    return a, PropagationDiagnostics(
+        steps=steps,
+        distance=distance,
+        shortest_step=float(shortest),
+        longest_step=longest,
+        peak_nonlinear_phase=peak_phase,
+    )
 
 
 def gaussian_lowpass_response(frequency: np.ndarray, bandwidth: float) -> np.ndarray:

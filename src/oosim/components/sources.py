@@ -96,3 +96,42 @@ class GaussianPulse(Component):
             fs=ctx.sample_rate,
         )
         return {"out": OpticalSignal(bands=(band,))}
+
+
+class SechPulse(Component):
+    """A hyperbolic-secant pulse, centred in the time window.
+
+    ``A(0, T) = sqrt(P0) * sech(T / T0)``
+
+    This shape exists here because it is the soliton shape. Launched into
+    anomalous fiber at the peak power that makes ``gamma*P0*T0**2/|beta2| = 1``,
+    it propagates without changing at all — the sharpest available check that
+    dispersion and the Kerr effect are both right *and* have the right signs
+    relative to each other. :func:`oosim.kernels.soliton_peak_power` computes
+    that power.
+    """
+
+    display_name = "Sech Pulse"
+    category = "Optical Sources"
+
+    peak_power = Param(0.0, unit="dBm", doc="Peak power P0 (not average power)")
+    width = Param(10.0, unit="ps", min=0.0, doc="T0, the soliton width parameter")
+    wavelength = Param(1550.0, unit="nm", min=1200.0, max=1700.0, doc="Vacuum wavelength")
+
+    outputs = {"out": PortType.OPTICAL}
+
+    def run(self, ctx: SimulationContext, inputs: dict[str, Signal]) -> dict[str, Signal]:
+        t0 = self.si("width")
+        if t0 <= 0.0:
+            raise ValueError(f"{self.label}: width must be positive, got {self.width}")
+
+        tau = (ctx.time_axis() - ctx.time_window / 2.0) / t0
+        Ex = np.sqrt(self.si("peak_power")) / np.cosh(tau)
+
+        band = Band(
+            Ex=Ex.astype(ctx.complex_dtype),
+            Ey=np.zeros(ctx.num_samples, dtype=ctx.complex_dtype),
+            f0=C_LIGHT / self.si("wavelength"),
+            fs=ctx.sample_rate,
+        )
+        return {"out": OpticalSignal(bands=(band,))}

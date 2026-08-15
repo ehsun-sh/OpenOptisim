@@ -14,7 +14,7 @@ import math
 
 import numpy as np
 
-from .signals import Band, EyeHistogram, EyeMeasurement
+from .signals import Band, EyeHistogram, EyeMeasurement, OpticalSignal
 
 
 def instantaneous_power(band: Band) -> np.ndarray:
@@ -50,6 +50,40 @@ def rms_time_width(band: Band) -> float:
 def peak_power(band: Band) -> float:
     """Highest instantaneous power in the window [W]."""
     return float(instantaneous_power(band).max())
+
+
+#: Reference bandwidth OSNR is quoted in: 0.1 nm at 1550 nm, the industry
+#: convention that makes numbers from different instruments comparable.
+OSNR_REFERENCE_BANDWIDTH = 12.5e9
+
+
+def noise_psd_at(signal: OpticalSignal, frequency: float) -> float:
+    """Total noise PSD at ``frequency`` [W/Hz], summed over both polarizations."""
+    return sum(
+        bin_.psd_x + bin_.psd_y for bin_ in signal.noise if bin_.f_start <= frequency < bin_.f_end
+    )
+
+
+def osnr(signal: OpticalSignal, *, reference_bandwidth: float = OSNR_REFERENCE_BANDWIDTH) -> float:
+    """Optical signal-to-noise ratio [dB], in a reference bandwidth.
+
+    Signal power is the total in the sampled bands; noise power is the noise
+    PSD *at each band's own centre frequency*, integrated over the reference
+    bandwidth. Quoting OSNR in a fixed reference bandwidth rather than the
+    signal's own is the convention, and it is the reason a 10 G and a 100 G
+    channel with the same OSNR do not have the same margin.
+    """
+    if reference_bandwidth <= 0.0:
+        raise ValueError(f"reference_bandwidth must be positive, got {reference_bandwidth}")
+
+    signal_power = signal.signal_power()
+    if signal_power <= 0.0:
+        return -math.inf
+
+    noise_power = sum(noise_psd_at(signal, band.f0) * reference_bandwidth for band in signal.bands)
+    if noise_power <= 0.0:
+        return math.inf
+    return 10.0 * math.log10(signal_power / noise_power)
 
 
 # --------------------------------------------------------------------------

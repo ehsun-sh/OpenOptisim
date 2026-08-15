@@ -18,8 +18,11 @@
 > Projects save to versioned JSON and sweeps are first-class, so a curve is one call rather than
 > a hand-written loop that mutates the graph.
 >
-> **Not implemented yet:** SSFM/nonlinearity, PMD, amplifiers, equalisers, coherent detection,
-> WDM crosstalk, and the GUI. See the [roadmap](#roadmap).
+> Fiber nonlinearity is solved by adaptive-step split-step Fourier, and EDFAs emit ASE into the
+> noise-bin model, so amplified multi-span links give correct OSNR.
+>
+> **Not implemented yet:** PMD, cross-phase modulation and four-wave mixing between channels,
+> equalisers, coherent detection, and the GUI. See the [roadmap](#roadmap).
 >
 > This is not yet a useful simulator. It is a foundation with the expensive decisions made and
 > tested. Criticism of those decisions is worth more right now than any feature —
@@ -105,6 +108,30 @@ q = result.metric(analyzer, lambda m: m.q_factor)     # shape (points, runs)
 Repeats matter more than they look. At −20 dBm, eight runs of the same link give error counts of
 37 to 58 — a 50% spread on the thing being measured, while Q itself is stable to ±1%. A single
 BER at a marginal operating point is one sample, not an answer.
+
+### Amplified and nonlinear
+
+`python examples/amplified_link.py` runs a chain of 80 km spans, each amplified back to transparency:
+
+```
+  spans   reach     OSNR      vs. one span            Sech pulse over 4 soliton periods
+      1     80 km   36.95 dB    +0.00  (theory -0.00)   configuration      width   peak
+      2    160 km   33.94 dB    -3.01  (theory -3.01)   soliton (N = 1)    x1.00   x1.00
+      4    320 km   30.93 dB    -6.02  (theory -6.02)   half the power     x2.62   x0.40
+      8    640 km   27.92 dB    -9.03  (theory -9.03)   no nonlinearity    x4.12   x0.23
+     16   1280 km   24.91 dB   -12.04  (theory -12.04)  no dispersion      x1.00   x1.00
+```
+
+The left table tracks `10·log10(N)` to a hundredth of a dB over sixteen spans, and nothing in the
+model is written in those terms — the noise bins just accumulate. The single-span figure of
+36.95 dB is `58 − 16 − 5`: the quantum floor, the span loss the amplifier has to make up, and its
+noise figure.
+
+The right table is the soliton. At N = 1 the chirp the Kerr effect imposes cancels the one
+dispersion imposes and the pulse is unchanged after 29 km; halve the power and the balance breaks.
+The last row is the honest caveat — self-phase modulation *alone* also preserves `|A(T)|`, so
+shape invariance proves nothing by itself. It is invariance with both effects active that is the
+result.
 
 ## What this is
 
@@ -238,7 +265,7 @@ time window, and results are reproducible.
 | :--- | :--- | :--- |
 | **0 — Foundations** ✅ | Signal model, context, port types, component base, registry, scheduler, `.oosim` project format, sweeps, CI | ~1 month |
 | **1 — MVP: linear link** *(essentially done)* | ✅ PRBS → NRZ → laser → MZM → fiber (α + CD) → PIN → filter → eye/Q/BER, validated end to end. **Python only, no GUI.** | ~2–3 months |
-| **1.5 — Nonlinear & amplified** | Adaptive-step SSFM, Kerr, PMD, EDFA (gain/NF/saturation/ASE), APD | ~2 months |
+| **1.5 — Nonlinear & amplified** *(mostly done)* | ✅ Adaptive-step SSFM, Kerr, EDFA with ASE, OSNR · ⬜ PMD, APD, XPM/FWM | ~2 months |
 | **2 — GUI & DSP** | Graph editor, plots, pulse shaping, FIR, equalizers (LMS/CMA), OSA, constellation, sweeps | ~3–4 months |
 | **3 — Coherent & WDM** | IQ mod, M-QAM, LO, 90° hybrid, balanced detection, coherent DSP, DWDM + crosstalk, 400G/800G references, CuPy back-end | ~6 months |
 | **4 — PIC** | Waveguides, ring resonators, MMI, MZI via integration with an existing S-matrix solver; PDK import | — |
@@ -270,9 +297,14 @@ Every physics block ships with a test against a closed-form result, run in CI
 | Receiver filter | 3 dB at `B`; noise bandwidth `B·√(π/4ln2)`; zero group delay | ✅ |
 | **BER** | `½·erfc(Q/√2)` matched against **directly counted errors**, 10⁻⁴–10⁻¹ | ✅ |
 | Link consistency | `L` km of span ≡ launching `α·L` dB lower, end to end | ✅ |
-| Lossless SSFM | Energy conserved with nonlinearity | ⬜ |
-| Fundamental soliton (N=1) | Envelope magnitude invariant along propagation | ⬜ |
-| EDFA | `P_ASE = 2·n_sp·hν·(G−1)·B_o` | ⬜ |
+| Lossless SSFM | Energy conserved with nonlinearity; γ=0 reproduces the exact linear solution | ✅ |
+| Self-phase modulation | `\|A(T)\|` exactly unchanged; spectrum broadens | ✅ |
+| **Fundamental soliton (N=1)** | Envelope invariant over 4 soliton periods — **the only test that pins the sign of γ against β₂** | ✅ |
+| Higher-order soliton (N=2) | Compresses at half a period, recovers at a full one | ✅ |
+| EDFA | `P_ASE = 2·n_sp·hν·(G−1)·B_o`; `n_sp = NF·G/2(G−1)` | ✅ |
+| OSNR | `58 + P_launch − NF − 10·log10(spans)`, over 16 spans | ✅ |
+| PMD | Differential group delay statistics | ⬜ |
+| XPM / FWM | Cross-channel nonlinearity | ⬜ |
 
 Component models are derived from published literature and standards (Agrawal, *Nonlinear Fiber
 Optics*; ITU-T G.652 / G.694.1; relevant IEEE 802.3 clauses), cited in each component's

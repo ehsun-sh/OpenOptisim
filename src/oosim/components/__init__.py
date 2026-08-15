@@ -7,17 +7,19 @@ between a plugin system researchers will actually use and one they will not.
 
 from __future__ import annotations
 
+from .amplifiers import EDFA
 from .analyzers import BERAnalyzer, EyeDiagram
 from .detectors import PINPhotodiode
 from .electrical import DCVoltage, NRZDriver, PRBSGenerator
 from .fiber import Fiber
 from .filters import ElectricalFilter
-from .meters import PowerMeter
+from .meters import OSNRMeter, PowerMeter
 from .modulators import MachZehnderModulator
 from .passive import Attenuator, Combiner
-from .sources import CWLaser, GaussianPulse
+from .sources import CWLaser, GaussianPulse, SechPulse
 
 __all__ = [
+    "EDFA",
     "Attenuator",
     "BERAnalyzer",
     "CWLaser",
@@ -29,7 +31,9 @@ __all__ = [
     "GaussianPulse",
     "MachZehnderModulator",
     "NRZDriver",
+    "OSNRMeter",
     "PINPhotodiode",
     "PRBSGenerator",
     "PowerMeter",
+    "SechPulse",
 ]

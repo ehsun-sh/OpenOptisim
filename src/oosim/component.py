@@ -275,13 +275,20 @@ class Component:
         )
 
     def sole_output(self) -> Port:
-        """The only output port, for chaining. Raises if there is not exactly one."""
-        if len(self.outputs) != 1:
+        """The only signal-carrying output port, for chaining.
+
+        Metric ports are ignored: a measurement a component emits alongside its
+        output — propagation diagnostics, say — is not part of the signal path,
+        and having one should not force every chain through it to name ports
+        explicitly.
+        """
+        signal_ports = [name for name, t in self.outputs.items() if t is not PortType.METRIC]
+        if len(signal_ports) != 1:
             raise ValueError(
-                f"{self.label} has {len(self.outputs)} outputs; name one explicitly, "
+                f"{self.label} has {len(signal_ports)} signal outputs; name one explicitly, "
                 f"e.g. {self.label}['{next(iter(self.outputs), 'out')}']"
             )
-        return self[next(iter(self.outputs))]
+        return self[signal_ports[0]]
 
     def sole_input(self) -> Port:
         """The only input port, for chaining. Raises if there is not exactly one."""

@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from ..component import Component, PortType
+from ..analysis import OSNR_REFERENCE_BANDWIDTH, osnr
+from ..component import Component, Param, PortType
 from ..context import SimulationContext
 from ..signals import BandPower, OpticalSignal, PowerReading, Signal
 from ..units import frequency_to_wavelength
@@ -39,3 +40,30 @@ class PowerMeter(Component):
                 bands=bands,
             )
         }
+
+
+class OSNRMeter(Component):
+    """Measures optical signal-to-noise ratio in a reference bandwidth.
+
+    OSNR is what actually predicts whether an amplified link will work, and it
+    is only meaningful because noise is carried as a spectral density rather
+    than mixed into the samples: the ratio depends on the noise in a 0.1 nm
+    slice, not on however much of it the simulation happened to sample.
+    """
+
+    display_name = "OSNR Meter"
+    category = "Measurements"
+
+    reference_bandwidth = Param(
+        OSNR_REFERENCE_BANDWIDTH / 1e9,
+        unit="GHz",
+        min=0.0,
+        doc="Reference bandwidth; 12.5 GHz is 0.1 nm at 1550 nm",
+    )
+
+    inputs = {"in": PortType.OPTICAL}
+    outputs = {"out": PortType.METRIC}
+
+    def run(self, ctx: SimulationContext, inputs: dict[str, Signal]) -> dict[str, Signal]:
+        signal: OpticalSignal = inputs["in"]
+        return {"out": osnr(signal, reference_bandwidth=self.si("reference_bandwidth"))}
