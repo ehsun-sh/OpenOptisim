@@ -1,0 +1,188 @@
+{
+  "schema_version": 1,
+  "oosim_version": "0.0.1.dev0",
+  "context": {
+    "bit_rate": 10000000000.0,
+    "samples_per_symbol": 8,
+    "sequence_length": 8192,
+    "seed": 2026,
+    "precision": "single"
+  },
+  "nodes": [
+    {
+      "id": "prbs",
+      "type": "PRBSGenerator",
+      "params": {
+        "order": 15.0
+      },
+      "ui": {
+        "x": 40.0,
+        "y": 40.0
+      }
+    },
+    {
+      "id": "driver",
+      "type": "NRZDriver",
+      "params": {
+        "v_low": 4.0,
+        "v_high": 0.0
+      },
+      "ui": {
+        "x": 200.0,
+        "y": 40.0
+      }
+    },
+    {
+      "id": "laser",
+      "type": "CWLaser",
+      "params": {
+        "power": 0.0,
+        "wavelength": 1550.0
+      },
+      "ui": {
+        "x": 40.0,
+        "y": 160.0
+      }
+    },
+    {
+      "id": "mzm",
+      "type": "MachZehnderModulator",
+      "params": {
+        "v_pi": 4.0,
+        "extinction_ratio": 30.0
+      },
+      "ui": {
+        "x": 360.0,
+        "y": 100.0
+      }
+    },
+    {
+      "id": "fiber",
+      "type": "Fiber",
+      "params": {
+        "length": 0.0,
+        "attenuation": 0.2,
+        "dispersion": 17.0
+      },
+      "ui": {
+        "x": 520.0,
+        "y": 100.0
+      }
+    },
+    {
+      "id": "pin",
+      "type": "PINPhotodiode",
+      "params": {
+        "responsivity": 0.8,
+        "shot_noise": true,
+        "thermal_noise": true
+      },
+      "ui": {
+        "x": 680.0,
+        "y": 100.0
+      }
+    },
+    {
+      "id": "lpf",
+      "type": "ElectricalFilter",
+      "params": {
+        "bandwidth": 7.0
+      },
+      "ui": {
+        "x": 840.0,
+        "y": 100.0
+      }
+    },
+    {
+      "id": "ber",
+      "type": "BERAnalyzer",
+      "params": {},
+      "ui": {
+        "x": 1000.0,
+        "y": 100.0
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": [
+        "lpf",
+        "out"
+      ],
+      "to": [
+        "ber",
+        "in"
+      ]
+    },
+    {
+      "from": [
+        "prbs",
+        "out"
+      ],
+      "to": [
+        "ber",
+        "reference"
+      ]
+    },
+    {
+      "from": [
+        "prbs",
+        "out"
+      ],
+      "to": [
+        "driver",
+        "in"
+      ]
+    },
+    {
+      "from": [
+        "mzm",
+        "out"
+      ],
+      "to": [
+        "fiber",
+        "in"
+      ]
+    },
+    {
+      "from": [
+        "pin",
+        "out"
+      ],
+      "to": [
+        "lpf",
+        "in"
+      ]
+    },
+    {
+      "from": [
+        "driver",
+        "out"
+      ],
+      "to": [
+        "mzm",
+        "electrical_in"
+      ]
+    },
+    {
+      "from": [
+        "laser",
+        "out"
+      ],
+      "to": [
+        "mzm",
+        "optical_in"
+      ]
+    },
+    {
+      "from": [
+        "fiber",
+        "out"
+      ],
+      "to": [
+        "pin",
+        "in"
+      ]
+    }
+  ]
+}

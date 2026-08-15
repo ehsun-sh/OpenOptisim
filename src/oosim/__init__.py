@@ -20,6 +20,8 @@ from __future__ import annotations
 from .component import BoolParam, Component, Param, Port, PortType
 from .context import SimulationContext
 from .graph import CycleError, Graph, GraphError, Results
+from .project import ProjectError, load, save
+from .registry import UnknownComponentError, manifests, registered_names
 from .signals import (
     Band,
     BandPower,
@@ -31,6 +33,7 @@ from .signals import (
     OpticalSignal,
     PowerReading,
 )
+from .sweep import SweepPoint, SweepResult, sweep
 
 __version__ = "0.0.1.dev0"
 
@@ -52,7 +55,22 @@ __all__ = [
     "Port",
     "PortType",
     "PowerReading",
+    "ProjectError",
     "Results",
     "SimulationContext",
+    "SweepPoint",
+    "SweepResult",
+    "UnknownComponentError",
     "__version__",
+    "load",
+    "manifests",
+    "registered_names",
+    "save",
+    "sweep",
 ]
+
+# Importing the built-in library is what registers it: a component becomes
+# available to project files when its module is imported, and the built-ins
+# should always be. Third-party components register the same way, when their
+# package is imported.
+from . import components as components

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from ..component import Component, Param, PortType
 from ..context import SimulationContext
 from ..signals import NoiseBin, OpticalSignal, Signal
@@ -35,6 +37,9 @@ class Combiner(Component):
         self.num_inputs = num_inputs
         # Per-instance port set: an N-way combiner has N inputs.
         self.inputs = {f"in{i}": PortType.OPTICAL for i in range(num_inputs)}
+
+    def structural_config(self) -> dict[str, Any]:
+        return {"num_inputs": self.num_inputs}
 
     def run(self, ctx: SimulationContext, inputs: dict[str, Signal]) -> dict[str, Signal]:
         power_factor = db_to_linear(-self.insertion_loss)

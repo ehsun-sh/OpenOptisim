@@ -15,8 +15,11 @@
 > PRBS → NRZ → CW laser → MZM → fiber (loss + dispersion) → PIN → filter → eye/Q/BER.
 > Every physics block is validated against a closed-form result in CI.
 >
+> Projects save to versioned JSON and sweeps are first-class, so a curve is one call rather than
+> a hand-written loop that mutates the graph.
+>
 > **Not implemented yet:** SSFM/nonlinearity, PMD, amplifiers, equalisers, coherent detection,
-> WDM crosstalk, the project file format, and the GUI. See the [roadmap](#roadmap).
+> WDM crosstalk, and the GUI. See the [roadmap](#roadmap).
 >
 > This is not yet a useful simulator. It is a foundation with the expensive decisions made and
 > tested. Criticism of those decisions is worth more right now than any feature —
@@ -87,9 +90,21 @@ with dispersion switched off the same 60 km span gives Q = 15.4 instead of 6.5. 
 textbook result for uncompensated 10 G NRZ on standard fiber.
 
 The two columns are also a cross-check on each other. 120 km of 0.2 dB/km is 24 dB, and launching
-0 dBm through it gives Q = 1.01 — the same Q as launching −24 dBm back to back. Modulator, fiber,
-detector, filter and analyzer all have to agree for that to hold; it is
+0 dBm through it gives the same Q as launching −24 dBm back to back. Modulator, fiber, detector,
+filter and analyzer all have to agree for that to hold; it is
 [a test](tests/test_ber.py), not a coincidence.
+
+Both curves come from `sweep()`, and the same script writes the schematic to
+[`examples/ook_link.oosim`](examples/ook_link.oosim) — versioned JSON, diffable, runnable headless.
+
+```python
+result = sweep(graph, {("laser", "power"): [-24.0, -21.0, -18.0]}, runs=8)
+q = result.metric(analyzer, lambda m: m.q_factor)     # shape (points, runs)
+```
+
+Repeats matter more than they look. At −20 dBm, eight runs of the same link give error counts of
+37 to 58 — a 50% spread on the thing being measured, while Q itself is stable to ±1%. A single
+BER at a marginal operating point is one sample, not an answer.
 
 ## What this is
 
@@ -221,7 +236,7 @@ time window, and results are reproducible.
 
 | Phase | Scope | Estimate¹ |
 | :--- | :--- | :--- |
-| **0 — Foundations** *(in progress)* | ✅ Signal model, context, port types, component base, scheduler, CI · ⬜ project file format, sweeps | ~1 month |
+| **0 — Foundations** ✅ | Signal model, context, port types, component base, registry, scheduler, `.oosim` project format, sweeps, CI | ~1 month |
 | **1 — MVP: linear link** *(essentially done)* | ✅ PRBS → NRZ → laser → MZM → fiber (α + CD) → PIN → filter → eye/Q/BER, validated end to end. **Python only, no GUI.** | ~2–3 months |
 | **1.5 — Nonlinear & amplified** | Adaptive-step SSFM, Kerr, PMD, EDFA (gain/NF/saturation/ASE), APD | ~2 months |
 | **2 — GUI & DSP** | Graph editor, plots, pulse shaping, FIR, equalizers (LMS/CMA), OSA, constellation, sweeps | ~3–4 months |

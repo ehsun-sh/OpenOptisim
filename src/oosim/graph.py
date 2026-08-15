@@ -14,6 +14,9 @@ streaming would buy nothing and complicate every block.
 from __future__ import annotations
 
 from collections import defaultdict, deque
+from collections.abc import Iterator, Mapping
+from contextlib import contextmanager
+from dataclasses import replace
 from itertools import pairwise
 from typing import TypeVar
 
@@ -108,6 +111,11 @@ class Graph:
     def components(self) -> tuple[Component, ...]:
         return tuple(self._components)
 
+    @property
+    def edges(self) -> dict[tuple[str, str], Port]:
+        """Connections, keyed by the destination ``(label, port name)``."""
+        return dict(self._edges)
+
     def connect(self, src: Port | Component, dst: Port | Component) -> None:
         """Wire an output port to an input port.
 
@@ -181,14 +189,67 @@ class Graph:
 
     # -- execution --------------------------------------------------------
 
-    def run(self, keep: list[Component] | None = None) -> Results:
+    def _resolve_label(self, component: Component | str) -> str:
+        if isinstance(component, str):
+            return component
+        return component.label
+
+    @contextmanager
+    def _applied(
+        self, overrides: Mapping[tuple[Component | str, str], float | bool] | None
+    ) -> Iterator[None]:
+        """Temporarily apply parameter overrides, restoring them afterwards.
+
+        A sweep must not leave the graph altered: the same graph object is reused
+        for every point, so a leaked value would silently contaminate every later
+        run. Restoration happens even if the run raises.
+        """
+        if not overrides:
+            yield
+            return
+
+        by_label = {c.label: c for c in self._components}
+        saved: list[tuple[Component, dict[str, float | bool]]] = []
+        try:
+            for (target, param), value in overrides.items():
+                label = self._resolve_label(target)
+                component = by_label.get(label)
+                if component is None:
+                    raise GraphError(f"no component labelled {label!r} in this graph")
+                spec = component.param_specs().get(param)
+                if spec is None:
+                    raise GraphError(f"{label} has no parameter {param!r}")
+                saved.append((component, dict(component._values)))
+                component._values = {**component._values, param: spec.validate(value)}
+            yield
+        finally:
+            for component, values in reversed(saved):
+                component._values = values
+
+    def run(
+        self,
+        keep: list[Component] | None = None,
+        *,
+        overrides: Mapping[tuple[Component | str, str], float | bool] | None = None,
+        seed: int | None = None,
+    ) -> Results:
         """Execute every component once, in dependency order.
 
         Intermediate signals are released as soon as their last consumer has run,
         so peak memory is the width of the graph cut rather than the whole graph.
         Metric outputs, outputs of sink components, and anything named in ``keep``
         are retained and returned.
+
+        ``overrides`` sets parameters for this run only, keyed by
+        ``(component_or_label, parameter_name)``; the graph is left unchanged.
+        ``seed`` replaces the context seed, which is how repeated runs draw
+        independent noise from the same graph.
         """
+        with self._applied(overrides):
+            return self._run(keep, seed)
+
+    def _run(self, keep: list[Component] | None, seed: int | None) -> Results:
+        ctx = self.ctx if seed is None else replace(self.ctx, seed=seed)
         self._validate()
         order = self._topological_order()
 
@@ -206,7 +267,7 @@ class Graph:
                 src = self._edges[(component.label, name)]
                 inputs[name] = live[(src.component.label, src.name)]
 
-            produced = component.run(self.ctx, inputs)
+            produced = component.run(ctx, inputs)
 
             missing = set(component.outputs) - set(produced)
             if missing:

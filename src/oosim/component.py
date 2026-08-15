@@ -161,6 +161,33 @@ class Component:
     #: Model version, bumped when numerical behaviour changes.
     version: ClassVar[str] = "0.1.0"
 
+    #: Name this component is stored under in project files. Defaults to the
+    #: class name; set it explicitly if a plugin would otherwise collide with
+    #: a built-in.
+    registry_name: ClassVar[str] = ""
+
+    def __init_subclass__(cls, **kwargs: object) -> None:
+        super().__init_subclass__(**kwargs)
+        from .registry import register
+
+        register(cls)
+
+    @classmethod
+    def type_name(cls) -> str:
+        """The name this component is stored under in project files."""
+        return cls.registry_name or cls.__name__
+
+    def structural_config(self) -> dict[str, Any]:
+        """Constructor arguments that are not parameters.
+
+        A parameter changes a number; this changes the shape of the component —
+        an N-way combiner's input count, for instance. The two are kept apart
+        because a GUI has to treat them differently: a parameter can be edited
+        in place, while changing the port set invalidates the connections drawn
+        to it.
+        """
+        return {}
+
     # Port declarations. These are class-level defaults that `__init__` copies
     # onto the instance, so a component with a configurable port count (an N-way
     # combiner, say) can rebind its own without touching the class.
@@ -208,6 +235,7 @@ class Component:
         """
         return {
             "name": cls.display_name or cls.__name__,
+            "type": cls.type_name(),
             "class": f"{cls.__module__}.{cls.__qualname__}",
             "category": cls.category,
             "version": cls.version,
