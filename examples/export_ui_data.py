@@ -166,9 +166,7 @@ def main() -> None:
             "counts": np.asarray(histogram.counts).astype(int).tolist(),
             "inphase_edges": np.asarray(histogram.inphase_edges).round(5).tolist(),
             "quadrature_edges": np.asarray(histogram.quadrature_edges).round(5).tolist(),
-            "reference": [
-                [float(p.real), float(p.imag)] for p in np.asarray(histogram.reference)
-            ],
+            "reference": [[float(p.real), float(p.imag)] for p in np.asarray(histogram.reference)],
         },
         "eye": {
             "counts": np.asarray(eye.counts).astype(int).tolist(),

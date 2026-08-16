@@ -162,9 +162,7 @@ def build(
         PRBSGenerator(order=23.0, bits_per_symbol=float(bits_per_symbol), label="prbs")
     )
     mapper = graph.add(
-        QAMMapper(
-            bits_per_symbol=float(bits_per_symbol), differential=differential, label="map"
-        )
+        QAMMapper(bits_per_symbol=float(bits_per_symbol), differential=differential, label="map")
     )
     reference = graph.add(
         QAMMapper(bits_per_symbol=float(bits_per_symbol), differential=False, label="ref")
@@ -181,9 +179,7 @@ def build(
     modulator = graph.add(IQModulator(label="mod"))
     lo = graph.add(CWLaser(power=13.0, linewidth=0.0, label="lo"))
     receiver = graph.add(CoherentReceiver(shot_noise=False, thermal_noise=False, label="rx"))
-    sampler = graph.add(
-        IQSampler(matched_filter=pulse_shaping, roll_off=roll_off, label="smp")
-    )
+    sampler = graph.add(IQSampler(matched_filter=pulse_shaping, roll_off=roll_off, label="smp"))
 
     graph.connect(prbs["out"], mapper["in"])
     graph.connect(prbs["out"], reference["in"])

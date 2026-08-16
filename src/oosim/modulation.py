@@ -74,8 +74,7 @@ def bits_to_indices(bits: np.ndarray, bits_per_symbol: int) -> np.ndarray:
         raise ValueError(f"bits_per_symbol must be >= 1, got {bits_per_symbol}")
     if bits.shape[0] % bits_per_symbol:
         raise ValueError(
-            f"{bits.shape[0]} bits does not divide into whole symbols of "
-            f"{bits_per_symbol} bits"
+            f"{bits.shape[0]} bits does not divide into whole symbols of {bits_per_symbol} bits"
         )
 
     grouped = bits.astype(np.int64).reshape(-1, bits_per_symbol)

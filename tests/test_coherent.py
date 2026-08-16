@@ -317,9 +317,7 @@ def _beat(signal_state: tuple[complex, complex], lo_state: tuple[complex, comple
     ctx = SimulationContext(
         bit_rate=10e9, samples_per_symbol=4, sequence_length=64, seed=1, precision="double"
     )
-    receiver = CoherentReceiver(
-        responsivity=1.0, shot_noise=False, thermal_noise=False, label="rx"
-    )
+    receiver = CoherentReceiver(responsivity=1.0, shot_noise=False, thermal_noise=False, label="rx")
     n = ctx.num_samples
     f0 = C_LIGHT / 1550e-9
 
@@ -424,9 +422,7 @@ def test_offset_removal_never_makes_the_measurement_worse() -> None:
     symbols it becomes radians — turning a 14% EVM into a meaningless one. The
     fix is to keep the correction only when it helps, and this asserts it.
     """
-    _, uncorrected, _ = _run(
-        bits_per_symbol=4, predistort=False, remove_frequency_offset=False
-    )
+    _, uncorrected, _ = _run(bits_per_symbol=4, predistort=False, remove_frequency_offset=False)
     _, corrected, _ = _run(bits_per_symbol=4, predistort=False, remove_frequency_offset=True)
 
     assert corrected.evm <= uncorrected.evm + 1e-12
@@ -531,7 +527,7 @@ def test_shot_noise_scales_the_way_the_formula_says() -> None:
 def test_snr_is_linear_in_received_power() -> None:
     _, low, _ = _run(bits_per_symbol=2, tx_dbm=-40.0, shot_noise=True, sequence_length=8192)
     _, high, _ = _run(bits_per_symbol=2, tx_dbm=-37.0, shot_noise=True, sequence_length=8192)
-    assert high.snr / low.snr == pytest.approx(10.0 ** 0.3, rel=0.08)
+    assert high.snr / low.snr == pytest.approx(10.0**0.3, rel=0.08)
 
 
 def test_mer_is_the_evm_stated_in_decibels() -> None:

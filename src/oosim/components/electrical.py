@@ -207,9 +207,7 @@ class IQDriver(Component):
         # results. Doing it the other way round would pre-distort a rectangle and
         # then smear the correction.
         if self.pulse_shaping:
-            taps = root_raised_cosine(
-                self.roll_off, int(self.filter_span), ctx.samples_per_symbol
-            )
+            taps = root_raised_cosine(self.roll_off, int(self.filter_span), ctx.samples_per_symbol)
             waveform = shape_symbols(values, ctx.samples_per_symbol, taps)
         else:
             waveform = np.repeat(values, ctx.samples_per_symbol)

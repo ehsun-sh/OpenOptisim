@@ -356,9 +356,7 @@ class IQSampler(Component):
         default_offset = 0 if self.matched_filter else sps // 2
         offset = default_offset if self.sample_offset < 0 else int(self.sample_offset)
         if not 0 <= offset < sps:
-            raise ValueError(
-                f"{self.label}: sample_offset must be in [0, {sps}), got {offset}"
-            )
+            raise ValueError(f"{self.label}: sample_offset must be in [0, {sps}), got {offset}")
 
         complex_baseband = np.asarray(current_i.samples).astype(np.float64) + 1j * np.asarray(
             current_q.samples
@@ -370,9 +368,7 @@ class IQSampler(Component):
             # every symbol instant but its own — so the neighbours contribute
             # nothing to this decision — and it is simultaneously matched to the
             # transmitted pulse, which is what makes it optimal against noise.
-            taps = root_raised_cosine(
-                self.roll_off, int(self.filter_span), ctx.samples_per_symbol
-            )
+            taps = root_raised_cosine(self.roll_off, int(self.filter_span), ctx.samples_per_symbol)
             complex_baseband = circular_filter(complex_baseband, taps)
 
         symbols = complex_baseband.reshape(-1, sps)[:, offset]

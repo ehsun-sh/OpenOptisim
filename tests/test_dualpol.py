@@ -464,9 +464,9 @@ def test_power_is_conserved_from_the_combiner_to_the_rotator() -> None:
     combined = PolarizationCombiner(label="pbc").run(
         ctx, {"x": cw(0.7, 0.0, ctx), "y": cw(0.4, 0.0, ctx)}
     )["out"]
-    rotated = PolarizationRotator(angle=33.0, phase=48.0, label="rot").run(
-        ctx, {"in": combined}
-    )["out"]
+    rotated = PolarizationRotator(angle=33.0, phase=48.0, label="rot").run(ctx, {"in": combined})[
+        "out"
+    ]
 
     assert rotated.signal_power() == pytest.approx(0.7**2 + 0.4**2, rel=1e-12)
     assert math.isclose(combined.signal_power(), rotated.signal_power(), rel_tol=1e-12)

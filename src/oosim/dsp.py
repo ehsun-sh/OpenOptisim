@@ -21,9 +21,7 @@ import numpy as np
 SYMMETRY_TILT = 0.1
 
 
-def root_raised_cosine(
-    roll_off: float, span_symbols: int, samples_per_symbol: int
-) -> np.ndarray:
+def root_raised_cosine(roll_off: float, span_symbols: int, samples_per_symbol: int) -> np.ndarray:
     """Root-raised-cosine impulse response, normalised to unit energy.
 
     A rectangular symbol has a sinc spectrum, which never ends: it is fine for a
