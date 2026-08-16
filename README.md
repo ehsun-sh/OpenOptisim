@@ -170,6 +170,28 @@ nothing blind can label them, and why a real link recovers the pairing from fram
 This is the increment that finally exercises `Ey`, which has been in the signal model since the
 first commit for exactly this purpose.
 
+### Shaping and differential encoding
+
+Two transmitter refinements that close out the coherent phase.
+
+**Root-raised-cosine shaping** bounds the spectrum. A held symbol has a sinc spectrum that never
+ends — fine for one channel alone, useless once neighbours are packed onto a grid. At a 0.2
+roll-off, **99.5%** of the shaped power falls inside ±0.6 symbol rates, against 83.6% for a held
+symbol. The shaping is split into a root at each end, so the cascade is Nyquist (zero at every
+symbol instant but its own) *and* the receiver's filter is matched to the transmitted pulse. One
+end alone gives neither.
+
+A shaped waveform overshoots between symbols, so its peak-to-average ratio is higher than the
+constellation's and a full-swing drive clips — about 7% EVM at 16-QAM, falling to 1% backed off.
+That is real, and backing off is what a transmitter does about it.
+
+**Differential quadrant encoding** closes the quarter-turn ambiguity that every blind stage leaves
+behind: the phase search cannot resolve it, and neither can the butterfly equaliser. Under plain
+Gray labelling a quarter turn permutes the bits differently for every point; under a
+quadrant-relative labelling it does exactly one thing, so differencing the quadrant makes it cancel.
+A quarter turn that destroys **>75%** of absolutely-labelled symbols costs a differentially encoded
+link nothing but its first symbol.
+
 ```python
 result = sweep(graph, {("laser", "power"): [-24.0, -21.0, -18.0]}, runs=8)
 q = result.metric(analyzer, lambda m: m.q_factor)     # shape (points, runs)
@@ -336,7 +358,7 @@ time window, and results are reproducible.
 | **0 — Foundations** ✅ | Signal model, context, port types, component base, registry, scheduler, `.oosim` project format, sweeps, CI | ~1 month |
 | **1 — MVP: linear link** *(essentially done)* | ✅ PRBS → NRZ → laser → MZM → fiber (α + CD) → PIN → filter → eye/Q/BER, validated end to end. **Python only, no GUI.** | ~2–3 months |
 | **1.5 — Nonlinear & amplified** ✅ | Adaptive-step SSFM, Kerr, EDFA with ASE, OSNR, PMD, APD | ~2 months |
-| **2 — Coherent transceiver** ✅ | Gray-coded M-QAM to 256, IQ modulator with bias and quadrature error, 90° hybrid, balanced detection, blind carrier phase recovery, **dual polarization with a blind butterfly equaliser**, EVM/MER, constellation diagram, validated against closed-form SER · ⬜ pulse shaping, differential encoding | ~3 months |
+| **2 — Coherent transceiver** ✅ | Gray-coded M-QAM to 256, IQ modulator with bias and quadrature error, 90° hybrid, balanced detection, blind carrier phase recovery, dual polarization with a blind butterfly equaliser, root-raised-cosine shaping and matched filtering, differential quadrant encoding, EVM/MER, constellation diagram, validated against closed-form SER | ~3 months |
 | **3 — GUI & WDM** | Session server, React Flow graph editor, OSA · DWDM + XPM/FWM crosstalk, 400G/800G references, CuPy back-end | ~6 months |
 | **4 — PIC** | Waveguides, ring resonators, MMI, MZI via integration with an existing S-matrix solver; PDK import | — |
 

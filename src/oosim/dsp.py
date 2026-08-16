@@ -21,6 +21,101 @@ import numpy as np
 SYMMETRY_TILT = 0.1
 
 
+def root_raised_cosine(
+    roll_off: float, span_symbols: int, samples_per_symbol: int
+) -> np.ndarray:
+    """Root-raised-cosine impulse response, normalised to unit energy.
+
+    A rectangular symbol has a sinc spectrum, which never ends: it is fine for a
+    single channel in isolation and useless the moment neighbours are packed onto
+    a grid beside it. A raised-cosine spectrum stops dead at ``(1 + roll_off)``
+    times the symbol rate, which is what lets 32 GBd sit on a 50 GHz grid.
+
+    The *root* is used because the shaping is split between the two ends. Cascade
+    a transmitter's root with a receiver's matched root and the result is a full
+    raised cosine, which is the shape that satisfies the Nyquist criterion: zero
+    at every symbol instant but its own, so neighbouring symbols contribute
+    nothing to a decision. Splitting it this way is also what makes the receiver
+    filter *matched* to the transmitted pulse, and therefore optimal against
+    additive noise. One end alone gives neither property.
+
+    ``roll_off = 0`` degenerates to a sinc: the narrowest possible spectrum, and
+    an impulse response that decays so slowly that any timing error is punished
+    severely. Real systems use 0.05 to 0.3 for exactly that reason.
+    """
+    if not 0.0 <= roll_off <= 1.0:
+        raise ValueError(f"roll_off must be in [0, 1], got {roll_off}")
+    if span_symbols < 1:
+        raise ValueError(f"span_symbols must be >= 1, got {span_symbols}")
+    if samples_per_symbol < 1:
+        raise ValueError(f"samples_per_symbol must be >= 1, got {samples_per_symbol}")
+
+    length = span_symbols * samples_per_symbol
+    if length % 2 == 0:
+        length += 1  # odd, so the peak sits on a sample and the filter is symmetric
+    t = (np.arange(length) - (length - 1) / 2.0) / samples_per_symbol
+
+    beta = roll_off
+    h = np.empty_like(t)
+    for index, tau in enumerate(t):
+        if abs(tau) < 1e-12:
+            h[index] = 1.0 - beta + 4.0 * beta / np.pi
+        elif beta > 0.0 and abs(abs(tau) - 1.0 / (4.0 * beta)) < 1e-12:
+            # Removable singularity at t = +-T/(4*beta); the limit is closed-form.
+            h[index] = (beta / np.sqrt(2.0)) * (
+                (1.0 + 2.0 / np.pi) * np.sin(np.pi / (4.0 * beta))
+                + (1.0 - 2.0 / np.pi) * np.cos(np.pi / (4.0 * beta))
+            )
+        else:
+            numerator = np.sin(np.pi * tau * (1.0 - beta)) + 4.0 * beta * tau * np.cos(
+                np.pi * tau * (1.0 + beta)
+            )
+            denominator = np.pi * tau * (1.0 - (4.0 * beta * tau) ** 2)
+            h[index] = numerator / denominator
+
+    return h / np.sqrt(float(np.sum(h**2)))
+
+
+def shape_symbols(
+    symbols: np.ndarray, samples_per_symbol: int, filter_taps: np.ndarray
+) -> np.ndarray:
+    """Upsample by inserting zeros, then filter — circularly, to keep the window closed.
+
+    Zero-insertion rather than sample-and-hold is what makes the filter the pulse
+    shape rather than a correction applied on top of a rectangle.
+
+    The convolution wraps because every other block in the engine treats the time
+    window as periodic: a linear convolution would leave a transient at each end
+    that the analyser would read as distortion, and the fix for that is the same
+    ``ignore_edges`` everything else already uses.
+
+    The result is scaled so the symbol instants keep the constellation's own
+    level. Without it a unit-energy filter would silently rescale the alphabet,
+    and every drive voltage downstream would be wrong by a factor depending on
+    the oversampling. Note this fixes the *scale* only: a single root is not
+    ISI-free, and the waveform sampled here still carries its neighbours'
+    interference. Removing that is the receiver's matched root's job, and the two
+    together are what satisfy the Nyquist criterion.
+    """
+    upsampled = np.zeros(symbols.shape[0] * samples_per_symbol, dtype=np.complex128)
+    upsampled[::samples_per_symbol] = symbols.astype(np.complex128)
+    peak = float(np.max(np.abs(filter_taps)))
+    if peak <= 0.0:
+        raise ValueError("the shaping filter is all zeros")
+    return circular_filter(upsampled, filter_taps) / peak
+
+
+def circular_filter(samples: np.ndarray, filter_taps: np.ndarray) -> np.ndarray:
+    """Filter with a symmetric FIR, wrapping at the window edges and zero group delay."""
+    taps = filter_taps.shape[0]
+    padded = np.zeros(samples.shape[0], dtype=np.complex128)
+    padded[:taps] = filter_taps
+    spectrum = np.fft.fft(samples) * np.fft.fft(padded)
+    # Undo the filter's own delay so the symbol instants stay where they were.
+    delay = (taps - 1) // 2
+    return np.roll(np.fft.ifft(spectrum), -delay)
+
+
 def constellation_radii(constellation: np.ndarray) -> np.ndarray:
     """The distinct moduli a constellation uses, ascending.
 

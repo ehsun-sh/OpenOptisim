@@ -111,6 +111,71 @@ def nearest_indices(symbols: np.ndarray, constellation: np.ndarray) -> np.ndarra
     return np.argmin(distances, axis=1)
 
 
+def quadrant_constellation(bits_per_symbol: int) -> np.ndarray:
+    """A QAM alphabet relabelled as ``(quadrant, position within it)``.
+
+    ``points[q * size + r]`` is the point ``r`` of the first quadrant turned
+    through ``q`` quarter turns, where ``size`` is a quarter of the alphabet.
+
+    The relabelling is the whole trick behind differential encoding. Under the
+    plain Gray labelling a quarter turn permutes the bits in a way that depends
+    on the point, because rotating swaps the roles of the I and Q magnitudes.
+    Under this one it does exactly one thing: it adds a constant to ``q`` and
+    leaves ``r`` alone. That reduces an ambiguity nothing blind can resolve to a
+    single unknown offset — which is precisely the kind of thing differential
+    encoding removes.
+
+    Within-quadrant order follows the plain constellation's own, so the alphabet
+    is the same set of points with the same minimum distance; only the labels
+    move. Gray adjacency across quadrant boundaries is given up in exchange, and
+    that costs a little BER at a given SNR — the price of not losing every bit
+    after the receiver's phase estimator settles a quarter turn away.
+    """
+    points = qam_constellation(bits_per_symbol)
+    if bits_per_symbol < 2:
+        raise ValueError(
+            f"differential quadrant encoding needs at least 2 bits per symbol, "
+            f"got {bits_per_symbol}"
+        )
+
+    first = np.array(
+        sorted(
+            (p for p in points if p.real > 0 and p.imag > 0),
+            key=lambda p: (round(p.real, 9), round(p.imag, 9)),
+        ),
+        dtype=np.complex128,
+    )
+    expected = points.shape[0] // 4
+    if first.shape[0] != expected:
+        raise ValueError(
+            f"expected {expected} points in the first quadrant, found {first.shape[0]}"
+        )
+    turns = np.exp(0.5j * math.pi * np.arange(4))
+    return (turns[:, None] * first[None, :]).reshape(-1)
+
+
+def differential_encode(indices: np.ndarray, quarter_size: int) -> np.ndarray:
+    """Accumulate the quadrant part of each symbol index; leave the rest absolute.
+
+    The transmitted quadrant is the running sum of the requested *changes*, so a
+    receiver that recovers the constellation a quarter turn away still sees the
+    right differences and decodes the right data. Only the very first symbol is
+    lost, because it has no predecessor to be different from.
+    """
+    values = indices.astype(np.int64)
+    deltas, residues = np.divmod(values, quarter_size)
+    quadrants = np.cumsum(deltas) % 4
+    return quadrants * quarter_size + residues
+
+
+def differential_decode(indices: np.ndarray, quarter_size: int) -> np.ndarray:
+    """The inverse of :func:`differential_encode`: difference the quadrant back out."""
+    values = indices.astype(np.int64)
+    quadrants, residues = np.divmod(values, quarter_size)
+    deltas = np.diff(quadrants, prepend=quadrants[:1] * 0) % 4
+    return deltas * quarter_size + residues
+
+
 def blind_phase_search(
     symbols: np.ndarray,
     constellation: np.ndarray,

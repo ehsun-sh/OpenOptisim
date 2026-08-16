@@ -4,9 +4,16 @@ from __future__ import annotations
 
 import numpy as np
 
-from ..component import Component, Param, PortType
+from ..component import BoolParam, Component, Param, PortType
 from ..context import SimulationContext
-from ..modulation import bits_to_indices, qam_constellation
+from ..modulation import (
+    bits_to_indices,
+    differential_decode,
+    differential_encode,
+    nearest_indices,
+    qam_constellation,
+    quadrant_constellation,
+)
 from ..signals import BinarySignal, Signal, SymbolSignal
 
 
@@ -31,11 +38,17 @@ class QAMMapper(Component):
     bits_per_symbol = Param(
         2.0, unit="", min=1.0, max=8.0, doc="1 BPSK, 2 QPSK, 4 16-QAM, 6 64-QAM, 8 256-QAM"
     )
+    differential = BoolParam(
+        False, doc="Encode the quadrant differentially, so a quarter-turn ambiguity costs nothing"
+    )
 
     inputs = {"in": PortType.BINARY}
     outputs = {"out": PortType.SYMBOL}
 
     def constellation(self) -> np.ndarray:
+        """The alphabet, relabelled by quadrant when differential encoding is on."""
+        if self.differential:
+            return quadrant_constellation(int(self.bits_per_symbol))
         return qam_constellation(int(self.bits_per_symbol))
 
     def run(self, ctx: SimulationContext, inputs: dict[str, Signal]) -> dict[str, Signal]:
@@ -51,10 +64,66 @@ class QAMMapper(Component):
 
         points = self.constellation()
         indices = bits_to_indices(np.asarray(binary.bits), per_symbol)
+        if self.differential:
+            indices = differential_encode(indices, points.shape[0] // 4)
+
         return {
             "out": SymbolSignal(
                 symbols=points[indices],
                 symbol_rate=ctx.bit_rate,
                 constellation=points,
+            )
+        }
+
+
+class DifferentialDecoder(Component):
+    """Undoes :class:`QAMMapper`'s differential quadrant encoding.
+
+    Slices the received symbols against the quadrant-labelled alphabet, differences
+    the quadrant back out, and re-emits them under the ordinary Gray labelling — so
+    what comes out can be compared directly against a plain mapper fed the same
+    bits, with no special handling anywhere downstream.
+
+    **What this buys.** Every blind stage upstream leaves a quarter-turn
+    ambiguity: the phase search cannot resolve it, and the butterfly equaliser has
+    it too. Absolute labelling turns that into total data loss. Differencing turns
+    it into a constant that cancels, so a receiver that settles a quarter turn
+    away decodes correctly anyway.
+
+    **What it costs.** A symbol error that crosses a quadrant boundary corrupts
+    two consecutive symbols instead of one, because each quadrant is decoded
+    relative to its predecessor. Roughly a factor of two in error rate near
+    threshold — the standard price of differential coding, and much the better
+    trade against losing everything.
+
+    The first symbol has no predecessor and carries no data; discard it, as
+    ``ignore_edges`` on the analyser already does.
+    """
+
+    display_name = "Differential Decoder"
+    category = "DSP"
+
+    inputs = {"in": PortType.SYMBOL}
+    outputs = {"out": PortType.SYMBOL}
+
+    def run(self, ctx: SimulationContext, inputs: dict[str, Signal]) -> dict[str, Signal]:
+        received: SymbolSignal = inputs["in"]
+        encoded = np.asarray(received.constellation)
+        quarter = encoded.shape[0] // 4
+        if quarter < 1:
+            raise ValueError(
+                f"{self.label}: a {encoded.shape[0]}-point constellation has no quadrant "
+                f"structure to difference"
+            )
+
+        indices = nearest_indices(np.asarray(received.symbols), encoded)
+        decoded = differential_decode(indices, quarter)
+
+        plain = qam_constellation(received.bits_per_symbol)
+        return {
+            "out": SymbolSignal(
+                symbols=plain[decoded],
+                symbol_rate=received.symbol_rate,
+                constellation=plain,
             )
         }

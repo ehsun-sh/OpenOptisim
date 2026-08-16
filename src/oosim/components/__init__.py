@@ -20,7 +20,7 @@ from .dsp import ButterflyEqualizer
 from .electrical import DCVoltage, IQDriver, NRZDriver, PRBSGenerator
 from .fiber import Fiber
 from .filters import ElectricalFilter
-from .mapping import QAMMapper
+from .mapping import DifferentialDecoder, QAMMapper
 from .meters import OSNRMeter, PowerMeter
 from .modulators import IQModulator, MachZehnderModulator
 from .passive import (
@@ -45,6 +45,7 @@ __all__ = [
     "ConstellationAnalyzer",
     "ConstellationDiagram",
     "DCVoltage",
+    "DifferentialDecoder",
     "DualPolarizationReceiver",
     "ElectricalFilter",
     "EyeDiagram",

@@ -6,6 +6,7 @@ import numpy as np
 
 from ..component import BoolParam, Component, Param, PortType
 from ..context import SimulationContext
+from ..dsp import root_raised_cosine, shape_symbols
 from ..signals import BinarySignal, ElectricalSignal, Signal, SymbolSignal
 
 #: Maximal-length LFSR feedback taps, as (order, tap) exponent pairs.
@@ -133,6 +134,16 @@ class IQDriver(Component):
     genuinely needs it: a transmitter DSP that does not know the modulator's V_pi
     cannot linearise it. Setting the two to different values models exactly that
     mismatch.
+
+    **Pulse shaping raises the peak, and the peak is what clips.** A held symbol
+    never leaves the constellation's own levels, so a full-swing drive is exactly
+    full swing. A root-raised-cosine waveform overshoots between symbols — that
+    is what the tails of the pulse are — so its peak-to-average ratio is higher,
+    and driving it at ``drive_ratio = 1`` runs the correction past ``arcsin(1)``
+    and clips. The clipping is real and is left visible: at 16-QAM with a 0.2
+    roll-off it costs about 7% EVM at full swing and about 1% backed off to 0.4.
+    Backing the drive off is what a real transmitter does about it, and the
+    residual 1% is the shaping filter's own truncation, set by ``filter_span``.
     """
 
     display_name = "IQ Driver"
@@ -147,6 +158,17 @@ class IQDriver(Component):
         doc="Peak drive as a fraction of V_pi; back off to linearise",
     )
     predistort = BoolParam(True, doc="Pre-invert the modulator's sine so the field is linear")
+    pulse_shaping = BoolParam(
+        False, doc="Root-raised-cosine shaping instead of holding each symbol flat"
+    )
+    roll_off = Param(0.2, unit="", min=0.0, max=1.0, doc="RRC excess bandwidth factor")
+    filter_span = Param(
+        16.0,
+        unit="",
+        min=2.0,
+        max=64.0,
+        doc="RRC length in symbols; longer leaves less residual ISI",
+    )
 
     inputs = {"in": PortType.SYMBOL}
     outputs = {"i": PortType.ELECTRICAL, "q": PortType.ELECTRICAL}
@@ -178,9 +200,23 @@ class IQDriver(Component):
             raise ValueError(f"{self.label}: the constellation collapses to the origin")
 
         values = np.asarray(symbols.symbols).astype(np.complex128)
+
+        # Shaping happens on the complex symbol, before the quadratures are taken
+        # and before pre-distortion: the pulse shape is what the DSP sends to the
+        # converters, and the arcsin correction is applied to the waveform that
+        # results. Doing it the other way round would pre-distort a rectangle and
+        # then smear the correction.
+        if self.pulse_shaping:
+            taps = root_raised_cosine(
+                self.roll_off, int(self.filter_span), ctx.samples_per_symbol
+            )
+            waveform = shape_symbols(values, ctx.samples_per_symbol, taps)
+        else:
+            waveform = np.repeat(values, ctx.samples_per_symbol)
+
         out = {}
-        for name, quadrature in (("i", values.real), ("q", values.imag)):
-            samples = np.repeat(self._drive(quadrature, peak), ctx.samples_per_symbol)
+        for name, quadrature in (("i", waveform.real), ("q", waveform.imag)):
+            samples = self._drive(quadrature, peak)
             out[name] = ElectricalSignal(
                 samples=samples.astype(ctx.real_dtype), fs=ctx.sample_rate, unit="V"
             )

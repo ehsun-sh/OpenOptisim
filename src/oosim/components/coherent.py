@@ -13,6 +13,7 @@ import numpy as np
 
 from ..component import BoolParam, Component, Param, PortType
 from ..context import SimulationContext
+from ..dsp import circular_filter, root_raised_cosine
 from ..modulation import blind_phase_search
 from ..signals import Band, ElectricalSignal, OpticalSignal, Signal, SymbolSignal
 from ..units import K_BOLTZMANN, Q_ELECTRON
@@ -327,6 +328,11 @@ class IQSampler(Component):
         -1.0, unit="", doc="Sample instant within the symbol; -1 selects the midpoint"
     )
     agc = BoolParam(True, doc="Normalise the sampled symbols to unit mean power")
+    matched_filter = BoolParam(
+        False, doc="Apply the receiver's root-raised-cosine half of the pulse shaping"
+    )
+    roll_off = Param(0.2, unit="", min=0.0, max=1.0, doc="Must match the transmitter's")
+    filter_span = Param(16.0, unit="", min=2.0, max=64.0, doc="RRC length in symbols")
 
     inputs = {"i": PortType.ELECTRICAL, "q": PortType.ELECTRICAL, "reference": PortType.SYMBOL}
     outputs = {"out": PortType.SYMBOL}
@@ -344,15 +350,32 @@ class IQSampler(Component):
                 )
 
         sps = ctx.samples_per_symbol
-        offset = sps // 2 if self.sample_offset < 0 else int(self.sample_offset)
+        # A matched filter puts the pulse's peak on the symbol instant it was
+        # launched at, which is sample zero of each symbol; a flat-held symbol has
+        # no peak and is best read from the middle, furthest from its own edges.
+        default_offset = 0 if self.matched_filter else sps // 2
+        offset = default_offset if self.sample_offset < 0 else int(self.sample_offset)
         if not 0 <= offset < sps:
             raise ValueError(
                 f"{self.label}: sample_offset must be in [0, {sps}), got {offset}"
             )
 
-        grid_i = np.asarray(current_i.samples).astype(np.float64).reshape(-1, sps)
-        grid_q = np.asarray(current_q.samples).astype(np.float64).reshape(-1, sps)
-        symbols = grid_i[:, offset] + 1j * grid_q[:, offset]
+        complex_baseband = np.asarray(current_i.samples).astype(np.float64) + 1j * np.asarray(
+            current_q.samples
+        ).astype(np.float64)
+
+        if self.matched_filter:
+            # The receiver's half of the split shaping. Cascaded with the
+            # transmitter's root it forms a full raised cosine, which is zero at
+            # every symbol instant but its own — so the neighbours contribute
+            # nothing to this decision — and it is simultaneously matched to the
+            # transmitted pulse, which is what makes it optimal against noise.
+            taps = root_raised_cosine(
+                self.roll_off, int(self.filter_span), ctx.samples_per_symbol
+            )
+            complex_baseband = circular_filter(complex_baseband, taps)
+
+        symbols = complex_baseband.reshape(-1, sps)[:, offset]
 
         if self.agc:
             power = float(np.mean(np.abs(symbols) ** 2))
