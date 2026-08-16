@@ -27,6 +27,7 @@ from oosim.components import (
     ConstellationAnalyzer,
     ConstellationDiagram,
     CWLaser,
+    DifferentialDecoder,
     IQDriver,
     IQModulator,
     IQSampler,
@@ -38,7 +39,10 @@ from oosim.components import (
 V_PI = 4.0
 SYMBOL_RATE = 32e9
 BITS_PER_SYMBOL = 4
-FORMATS = {1: "BPSK", 2: "QPSK", 4: "16-QAM", 6: "64-QAM", 8: "256-QAM"}
+# BPSK is absent on purpose: differential *quadrant* encoding needs a quadrant to
+# difference, and a two-point constellation has none. A binary format resolves its
+# ambiguity by other means, and the mapper says so rather than silently coping.
+FORMATS = {2: "QPSK", 4: "16-QAM", 6: "64-QAM", 8: "256-QAM"}
 
 
 def build(sequence_length: int = 4096) -> Graph:
@@ -53,8 +57,24 @@ def build(sequence_length: int = 4096) -> Graph:
     prbs = graph.add(
         PRBSGenerator(order=23.0, bits_per_symbol=float(BITS_PER_SYMBOL), label="prbs")
     )
-    mapper = graph.add(QAMMapper(bits_per_symbol=float(BITS_PER_SYMBOL), label="map"))
-    driver = graph.add(IQDriver(v_pi=V_PI, predistort=True, label="drv"))
+    mapper = graph.add(
+        QAMMapper(bits_per_symbol=float(BITS_PER_SYMBOL), differential=True, label="map")
+    )
+    reference = graph.add(
+        QAMMapper(bits_per_symbol=float(BITS_PER_SYMBOL), differential=False, label="ref")
+    )
+    # Backed off because a root-raised-cosine waveform overshoots between symbols
+    # and a full-swing drive would run the pre-distortion past arcsin(1).
+    driver = graph.add(
+        IQDriver(
+            v_pi=V_PI,
+            predistort=True,
+            pulse_shaping=True,
+            roll_off=0.2,
+            drive_ratio=0.4,
+            label="drv",
+        )
+    )
     # 100 kHz, which is an ordinary coherent-transmitter laser rather than a
     # specially quiet one. An earlier version of this export had to run at 10 kHz
     # because there was no carrier recovery in the chain and the accumulated
@@ -66,12 +86,20 @@ def build(sequence_length: int = 4096) -> Graph:
     meter = graph.add(PowerMeter(label="pm"))
     lo = graph.add(CWLaser(power=10.0, wavelength=1550.0, linewidth=100.0, label="lo"))
     receiver = graph.add(CoherentReceiver(responsivity=0.8, label="rx"))
-    sampler = graph.add(IQSampler(label="smp"))
+    sampler = graph.add(IQSampler(matched_filter=True, roll_off=0.2, label="smp"))
     recovery = graph.add(CarrierRecovery(window=64.0, test_phases=32.0, label="cr"))
+    decoder = graph.add(DifferentialDecoder(label="dec"))
+    # Two analysers, because the two numbers come from different places. EVM is a
+    # soft measurement and has to be taken on the recovered symbols; the decoder
+    # emits decisions, so an EVM after it would read zero however bad the link is.
+    # The error count is the opposite: it only exists once the data is decoded.
     analyzer = graph.add(ConstellationAnalyzer(ignore_edges=64.0, label="vsa"))
+    errors = graph.add(ConstellationAnalyzer(ignore_edges=64.0, label="ber"))
     diagram = graph.add(ConstellationDiagram(bins=96.0, extent=1.5, label="cd"))
 
-    graph.chain(prbs, mapper, driver)
+    graph.connect(prbs["out"], mapper["in"])
+    graph.connect(prbs["out"], reference["in"])
+    graph.connect(mapper["out"], driver["in"])
     graph.connect(laser, modulator["optical_in"])
     graph.connect(driver["i"], modulator["i"])
     graph.connect(driver["q"], modulator["q"])
@@ -82,8 +110,11 @@ def build(sequence_length: int = 4096) -> Graph:
     graph.connect(receiver["q"], sampler["q"])
     graph.connect(mapper["out"], sampler["reference"])
     graph.connect(sampler["out"], recovery["in"])
+    graph.connect(recovery["out"], decoder["in"])
     graph.connect(recovery["out"], analyzer["in"])
     graph.connect(mapper["out"], analyzer["reference"])
+    graph.connect(decoder["out"], errors["in"])
+    graph.connect(reference["out"], errors["reference"])
     graph.connect(recovery["out"], diagram["in"])
     return graph
 
@@ -94,7 +125,8 @@ def of_type(graph: Graph, kind: type) -> Any:
 
 def main() -> None:
     graph = build()
-    analyzer = of_type(graph, ConstellationAnalyzer)
+    analyzer = next(c for c in graph.components if c.label == "vsa")
+    errors = next(c for c in graph.components if c.label == "ber")
     diagram = of_type(graph, ConstellationDiagram)
     meter = of_type(graph, PowerMeter)
     receiver = of_type(graph, CoherentReceiver)
@@ -102,6 +134,7 @@ def main() -> None:
 
     results = graph.run(keep=[receiver])
     measurement = results[analyzer]
+    counted = results[errors]
     histogram = results[diagram]
 
     # The I-quadrature eye of a coherent receiver: a real thing to look at, and
@@ -119,18 +152,20 @@ def main() -> None:
 
     # Required received power per format, from the same graph re-run.
     sensitivity: list[dict[str, Any]] = []
+    prbs = of_type(graph, PRBSGenerator)
+    # Both mappers, not just the first: the reference arm has to be told the
+    # format too, or it would encode against a different alphabet than the one
+    # being measured.
+    mappers = [c for c in graph.components if isinstance(c, QAMMapper)]
     for bits_per_symbol, name in FORMATS.items():
-        prbs = of_type(graph, PRBSGenerator)
-        mapper = of_type(graph, QAMMapper)
         points = [float(p) for p in range(-44, -6, 3)]
-        curve = sweep(
-            graph,
-            {
-                (laser, "power"): points,
-                (prbs, "bits_per_symbol"): [float(bits_per_symbol)],
-                (mapper, "bits_per_symbol"): [float(bits_per_symbol)],
-            },
-        )
+        overrides: dict[Any, list[float]] = {
+            (laser, "power"): points,
+            (prbs, "bits_per_symbol"): [float(bits_per_symbol)],
+        }
+        for mapper in mappers:
+            overrides[(mapper, "bits_per_symbol")] = [float(bits_per_symbol)]
+        curve = sweep(graph, overrides)
         sensitivity.append(
             {
                 "name": name,
@@ -154,9 +189,10 @@ def main() -> None:
             "snr_db": measurement.snr_db,
             "mer_db": measurement.mer_db,
             "ber": measurement.ber_estimated,
-            "symbol_errors": measurement.symbol_errors,
+            "ber_counted": counted.ber_counted,
+            "symbol_errors": counted.symbol_errors,
             "symbols": measurement.symbols_evaluated,
-            "bit_errors": measurement.bit_errors,
+            "bit_errors": counted.bit_errors,
             "bits": measurement.bits_evaluated,
             "frequency_offset_mhz": measurement.frequency_offset / 1e6,
             "bits_per_symbol": measurement.bits_per_symbol,
@@ -193,7 +229,7 @@ def main() -> None:
         f"{FORMATS[BITS_PER_SYMBOL]} at {SYMBOL_RATE * BITS_PER_SYMBOL / 1e9:.0f} Gb/s: "
         f"EVM = {measurement.evm * 100:.2f}%, SNR = {measurement.snr_db:.2f} dB, "
         f"BER = {measurement.ber_estimated:.3e}, "
-        f"{measurement.symbol_errors} symbol errors in {measurement.symbols_evaluated}"
+        f"{counted.symbol_errors} symbol errors in {counted.symbols_evaluated}"
     )
     print(f"{len(payload['manifests'])} component manifests")
     counts = payload["constellation"]["counts"]

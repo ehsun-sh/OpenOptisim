@@ -98,6 +98,13 @@ class DifferentialDecoder(Component):
 
     The first symbol has no predecessor and carries no data; discard it, as
     ``ignore_edges`` on the analyser already does.
+
+    **This block emits decisions, so do not measure EVM after it.** Differencing
+    the quadrant requires slicing first, and what comes out is ideal constellation
+    points — an EVM taken here is exactly zero however bad the link is. Modulation
+    quality is a soft measurement and belongs upstream, on the recovered symbols;
+    the error count is a hard one and belongs here. A link that wants both needs
+    an analyser in each place, which is also how a bench does it.
     """
 
     display_name = "Differential Decoder"
