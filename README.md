@@ -9,12 +9,13 @@
 
 ---
 
-> ### ⚠️ Project status: pre-alpha — Phases 0, 1 and 1.5 complete; single-polarization coherent working
+> ### ⚠️ Project status: pre-alpha — Phases 0, 1, 1.5 and 2 complete. No GUI yet.
 >
 > Two complete links run end to end and produce numbers that match theory.
 > **Direct detection:** PRBS → NRZ → CW laser → MZM → fiber (loss + dispersion) → PIN → filter →
-> eye/Q/BER. **Coherent:** PRBS → Gray-coded M-QAM → IQ driver → IQ modulator → 90° hybrid with
-> balanced detection → EVM/SNR and counted symbol errors, up to 256-QAM.
+> eye/Q/BER. **Coherent:** PRBS → Gray-coded M-QAM → RRC shaping → IQ modulator → 90° hybrid with
+> balanced detection → carrier recovery → EVM/SNR and counted errors, up to 256-QAM, and dual
+> polarization at 256 Gb/s with a blind butterfly equaliser.
 > Every physics block is validated against a closed-form result in CI.
 >
 > Projects save to versioned JSON and sweeps are first-class, so a curve is one call rather than
