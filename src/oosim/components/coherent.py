@@ -7,6 +7,8 @@ Communications", JLT 34(1), 2016.
 
 from __future__ import annotations
 
+import math
+
 import numpy as np
 
 from ..component import BoolParam, Component, Param, PortType
@@ -133,6 +135,99 @@ class CoherentReceiver(Component):
                 samples=current_q.astype(ctx.real_dtype), fs=ctx.sample_rate, unit="A"
             ),
         }
+
+
+class DualPolarizationReceiver(CoherentReceiver):
+    """Polarization-diverse coherent receiver: four photocurrents, not two.
+
+    The signal is split by a polarization beam splitter, the LO is split with it,
+    and each pair goes to its own 90-degree hybrid. The result is the *complete*
+    optical field: two complex quadratures on each of two orthogonal states, from
+    which any launched polarization can be reconstructed by linear combination.
+
+    That last clause is the point. A single-polarization receiver goes deaf when
+    the fibre rotates the signal onto the orthogonal state; this one cannot,
+    because it measures both states and lets the DSP recombine them. It is why a
+    coherent link can carry two independent tributaries at one wavelength while a
+    direct-detection link carries one.
+
+    The PBS axes are the receiver's own, and they bear no relation to whatever
+    the transmitter launched — a fibre rotates the state arbitrarily and drifts.
+    So ``x`` and ``y`` here are *not* the two tributaries. Separating those is
+    :class:`~oosim.components.dsp.ButterflyEqualizer`'s job, and without it these
+    outputs are two mixtures rather than two channels.
+
+    The noise convention is inherited unchanged: each hybrid sees half the LO
+    power, so the per-quadrature shot variance is half the single-polarization
+    receiver's, and splitting the signal likewise halves what each branch
+    receives. The two effects cancel in the SNR, which is why polarization
+    multiplexing doubles capacity at the same SNR per tributary rather than
+    costing 3 dB.
+    """
+
+    display_name = "Dual-Pol Coherent Receiver"
+    category = "Receivers"
+
+    inputs = {"in": PortType.OPTICAL, "lo": PortType.OPTICAL}
+    outputs = {
+        "xi": PortType.ELECTRICAL,
+        "xq": PortType.ELECTRICAL,
+        "yi": PortType.ELECTRICAL,
+        "yq": PortType.ELECTRICAL,
+    }
+
+    def run(self, ctx: SimulationContext, inputs: dict[str, Signal]) -> dict[str, Signal]:
+        signal: OpticalSignal = inputs["in"]
+        lo: OpticalSignal = inputs["lo"]
+
+        if len(lo.bands) != 1:
+            raise ValueError(
+                f"{self.label}: the local oscillator must be a single band, got "
+                f"{len(lo.bands)}; a coherent receiver mixes against one tone"
+            )
+        reference = lo.bands[0]
+        # The LO is launched at 45 degrees so the PBS delivers equal power to both
+        # hybrids. A real receiver either does this or uses a polarization-
+        # maintaining split; either way each branch gets half.
+        lo_amplitude = math.sqrt(reference.average_power() / 2.0)
+        lo_phase = np.exp(1j * np.angle(reference.Ex.astype(np.complex128)))
+        lo_branch = lo_amplitude * lo_phase
+
+        band = self._nearest_band(signal, reference.f0)
+        responsivity = self.si("responsivity")
+        bandwidth = self.noise_bandwidth(ctx)
+        # Each of the two hybrids sees half the LO.
+        shot_variance = Q_ELECTRON * responsivity * (reference.average_power() / 2.0) * bandwidth
+        thermal_variance = (
+            4.0 * K_BOLTZMANN * self.si("temperature") * bandwidth / self.si("load_resistance")
+            if self.si("load_resistance") > 0.0
+            else 0.0
+        )
+
+        out: dict[str, Signal] = {}
+        for axis, field in (("x", "Ex"), ("y", "Ey")):
+            if band is None:
+                mix = np.zeros(ctx.num_samples, dtype=np.complex128)
+            else:
+                beat = np.exp(2j * np.pi * (band.f0 - reference.f0) * ctx.time_axis())
+                mix = getattr(band, field).astype(np.complex128) * np.conj(lo_branch) * beat
+
+            for quadrature, part in (("i", mix.real), ("q", mix.imag)):
+                current = responsivity * part
+                if self.shot_noise and shot_variance > 0.0:
+                    rng = ctx.rng(type(self).__name__, self.label, "shot", axis, quadrature)
+                    current = current + rng.normal(
+                        0.0, math.sqrt(shot_variance), size=ctx.num_samples
+                    )
+                if self.thermal_noise and thermal_variance > 0.0:
+                    rng = ctx.rng(type(self).__name__, self.label, "thermal", axis, quadrature)
+                    current = current + rng.normal(
+                        0.0, math.sqrt(thermal_variance), size=ctx.num_samples
+                    )
+                out[axis + quadrature] = ElectricalSignal(
+                    samples=current.astype(ctx.real_dtype), fs=ctx.sample_rate, unit="A"
+                )
+        return out
 
 
 class CarrierRecovery(Component):

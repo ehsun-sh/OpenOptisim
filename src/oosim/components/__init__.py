@@ -9,15 +9,27 @@ from __future__ import annotations
 
 from .amplifiers import EDFA
 from .analyzers import BERAnalyzer, ConstellationAnalyzer, ConstellationDiagram, EyeDiagram
-from .coherent import CarrierRecovery, CoherentReceiver, IQSampler
+from .coherent import (
+    CarrierRecovery,
+    CoherentReceiver,
+    DualPolarizationReceiver,
+    IQSampler,
+)
 from .detectors import APDPhotodiode, PINPhotodiode
+from .dsp import ButterflyEqualizer
 from .electrical import DCVoltage, IQDriver, NRZDriver, PRBSGenerator
 from .fiber import Fiber
 from .filters import ElectricalFilter
 from .mapping import QAMMapper
 from .meters import OSNRMeter, PowerMeter
 from .modulators import IQModulator, MachZehnderModulator
-from .passive import Attenuator, Combiner
+from .passive import (
+    Attenuator,
+    Combiner,
+    PolarizationCombiner,
+    PolarizationRotator,
+    Splitter,
+)
 from .sources import CWLaser, GaussianPulse, SechPulse
 
 __all__ = [
@@ -25,6 +37,7 @@ __all__ = [
     "APDPhotodiode",
     "Attenuator",
     "BERAnalyzer",
+    "ButterflyEqualizer",
     "CWLaser",
     "CarrierRecovery",
     "CoherentReceiver",
@@ -32,6 +45,7 @@ __all__ = [
     "ConstellationAnalyzer",
     "ConstellationDiagram",
     "DCVoltage",
+    "DualPolarizationReceiver",
     "ElectricalFilter",
     "EyeDiagram",
     "Fiber",
@@ -44,7 +58,10 @@ __all__ = [
     "OSNRMeter",
     "PINPhotodiode",
     "PRBSGenerator",
+    "PolarizationCombiner",
+    "PolarizationRotator",
     "PowerMeter",
     "QAMMapper",
     "SechPulse",
+    "Splitter",
 ]

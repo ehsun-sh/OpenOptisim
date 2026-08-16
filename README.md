@@ -145,6 +145,31 @@ subtracting a constant or a line, and it puts a ceiling on SNR that no power bud
 search of Pfau et al. Both halves of that claim are [asserted](tests/test_dsp.py) — the second
 would be meaningless without the first.
 
+### Dual polarization
+
+`python examples/dualpol_link.py` puts two independent 16-QAM tributaries on orthogonal
+polarizations of one wavelength — **256 Gb/s** — and rotates the state the way a fibre does:
+
+```
+rotation    without equaliser              with equaliser
+    0 deg  EVM    2.5 /    2.5 %      0 err      EVM 2.50 / 2.57 %    0 err
+   15 deg  EVM   28.1 /   29.2 %   1416 err      EVM 2.51 / 2.58 %    0 err
+   30 deg  EVM  218.0 /  123.5 %   6217 err      EVM 2.52 / 2.51 %    0 err
+   45 deg  EVM  278.5 /  365.2 %   6763 err      EVM 2.48 / 2.55 %    0 err
+   72 deg  EVM   85.7 /  165.6 %   5523 err      EVM 2.54 / 2.56 %    0 err  (swapped)
+   90 deg  EVM    2.5 /    2.5 %      0 err      EVM 2.54 / 2.48 %    0 err  (swapped)
+```
+
+Past a few degrees the unequalised branches are not degraded — they carry no recoverable data at
+all, because each is a *mixture* of both tributaries. The
+[butterfly equaliser](src/oosim/dsp.py) separates them blind, with no training sequence anywhere in
+the link. Read the two end rows together: 90° is a clean swap rather than a mixture, so it needs no
+equaliser at all and simply delivers the tributaries the other way round — which is also why
+nothing blind can label them, and why a real link recovers the pairing from framing.
+
+This is the increment that finally exercises `Ey`, which has been in the signal model since the
+first commit for exactly this purpose.
+
 ```python
 result = sweep(graph, {("laser", "power"): [-24.0, -21.0, -18.0]}, runs=8)
 q = result.metric(analyzer, lambda m: m.q_factor)     # shape (points, runs)
@@ -311,7 +336,7 @@ time window, and results are reproducible.
 | **0 — Foundations** ✅ | Signal model, context, port types, component base, registry, scheduler, `.oosim` project format, sweeps, CI | ~1 month |
 | **1 — MVP: linear link** *(essentially done)* | ✅ PRBS → NRZ → laser → MZM → fiber (α + CD) → PIN → filter → eye/Q/BER, validated end to end. **Python only, no GUI.** | ~2–3 months |
 | **1.5 — Nonlinear & amplified** ✅ | Adaptive-step SSFM, Kerr, EDFA with ASE, OSNR, PMD, APD | ~2 months |
-| **2 — Coherent transceiver** *(single-pol done)* | ✅ Gray-coded M-QAM to 256, IQ modulator with bias and quadrature error, 90° hybrid, balanced detection, blind carrier phase recovery, EVM/MER, constellation diagram, validated against closed-form SER · ⬜ dual polarization, pulse shaping, adaptive equaliser | ~3 months |
+| **2 — Coherent transceiver** ✅ | Gray-coded M-QAM to 256, IQ modulator with bias and quadrature error, 90° hybrid, balanced detection, blind carrier phase recovery, **dual polarization with a blind butterfly equaliser**, EVM/MER, constellation diagram, validated against closed-form SER · ⬜ pulse shaping, differential encoding | ~3 months |
 | **3 — GUI & WDM** | Session server, React Flow graph editor, OSA · DWDM + XPM/FWM crosstalk, 400G/800G references, CuPy back-end | ~6 months |
 | **4 — PIC** | Waveguides, ring resonators, MMI, MZI via integration with an existing S-matrix solver; PDK import | — |
 
