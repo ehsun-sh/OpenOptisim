@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from .amplifiers import EDFA
 from .analyzers import BERAnalyzer, ConstellationAnalyzer, ConstellationDiagram, EyeDiagram
-from .coherent import CoherentReceiver, IQSampler
+from .coherent import CarrierRecovery, CoherentReceiver, IQSampler
 from .detectors import APDPhotodiode, PINPhotodiode
 from .electrical import DCVoltage, IQDriver, NRZDriver, PRBSGenerator
 from .fiber import Fiber
@@ -26,6 +26,7 @@ __all__ = [
     "Attenuator",
     "BERAnalyzer",
     "CWLaser",
+    "CarrierRecovery",
     "CoherentReceiver",
     "Combiner",
     "ConstellationAnalyzer",

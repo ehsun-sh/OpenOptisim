@@ -11,6 +11,7 @@ import numpy as np
 
 from ..component import BoolParam, Component, Param, PortType
 from ..context import SimulationContext
+from ..modulation import blind_phase_search
 from ..signals import Band, ElectricalSignal, OpticalSignal, Signal, SymbolSignal
 from ..units import K_BOLTZMANN, Q_ELECTRON
 
@@ -131,6 +132,73 @@ class CoherentReceiver(Component):
             "q": ElectricalSignal(
                 samples=current_q.astype(ctx.real_dtype), fs=ctx.sample_rate, unit="A"
             ),
+        }
+
+
+class CarrierRecovery(Component):
+    """Blind carrier phase recovery, by phase search.
+
+    A transmitter laser and a local oscillator are independent oscillators, so
+    the phase between them performs a random walk whose rate is set by their
+    linewidths. Nothing upstream can remove it: it is not a constant, and it is
+    not a frequency offset either, so subtracting a line does not help. Left in,
+    it puts a **floor** under the measured SNR that no amount of launch power
+    lifts — at 100 kHz and 32 GBd, around 18 dB, which is not enough for 16-QAM.
+
+    This block is what a real receiver does about it. See
+    :func:`oosim.modulation.blind_phase_search` for the method.
+
+    **The quadrant ambiguity is real and is not hidden.** Every QAM constellation
+    here is invariant under a quarter turn, so no blind estimator can tell which
+    quadrant it is in; the recovered phase is right modulo pi/2. A deployed link
+    resolves this by differentially encoding the quadrant, which costs a little
+    sensitivity. That is not implemented yet, so what remains after this block is
+    a *constant* rotation by some multiple of pi/2 — and the measurement block
+    removes it data-aided, the way a bench analyser does with the pattern in
+    hand. The time-varying part, which is the part that actually costs SNR, is
+    gone by then.
+
+    A **cycle slip** is the failure mode to know about: if the phase walks faster
+    than the window can follow, the estimate latches onto a neighbouring quadrant
+    and stays there, and every symbol after the slip is decided in the wrong
+    quadrant. It does not degrade gracefully. Widening ``window`` tracks noise
+    better but slips sooner; narrowing it does the reverse.
+    """
+
+    display_name = "Carrier Recovery"
+    category = "DSP"
+
+    test_phases = Param(
+        32.0, unit="", min=4.0, max=128.0, doc="Candidate rotations searched across a quarter turn"
+    )
+    window = Param(
+        64.0,
+        unit="",
+        min=1.0,
+        doc="Symbols averaged per estimate; longer is quieter but slips sooner",
+    )
+
+    inputs = {"in": PortType.SYMBOL}
+    outputs = {"out": PortType.SYMBOL}
+
+    def run(self, ctx: SimulationContext, inputs: dict[str, Signal]) -> dict[str, Signal]:
+        received: SymbolSignal = inputs["in"]
+        constellation = np.asarray(received.constellation)
+
+        phase = blind_phase_search(
+            np.asarray(received.symbols),
+            constellation,
+            test_phases=int(self.test_phases),
+            window=int(self.window),
+        )
+        recovered = np.asarray(received.symbols).astype(np.complex128) * np.exp(-1j * phase)
+
+        return {
+            "out": SymbolSignal(
+                symbols=recovered,
+                symbol_rate=received.symbol_rate,
+                constellation=constellation,
+            )
         }
 
 

@@ -111,6 +111,78 @@ def nearest_indices(symbols: np.ndarray, constellation: np.ndarray) -> np.ndarra
     return np.argmin(distances, axis=1)
 
 
+def blind_phase_search(
+    symbols: np.ndarray,
+    constellation: np.ndarray,
+    *,
+    test_phases: int = 32,
+    window: int = 64,
+) -> np.ndarray:
+    """Estimate the carrier phase per symbol, without knowing what was sent.
+
+    The blind phase search of Pfau, Hoffmann and Noe (JLT 27(8), 2009), which is
+    what a real coherent receiver runs. For each of ``test_phases`` candidate
+    rotations it de-rotates the symbol, measures the distance to the nearest
+    constellation point, and sums that over a sliding window; the candidate with
+    the smallest sum wins. Averaging over a window is the whole trick — a single
+    symbol cannot distinguish phase noise from additive noise, and a run of them
+    can.
+
+    Only ``[0, pi/2)`` is searched, because every QAM constellation here is
+    invariant under a quarter turn. That symmetry is also the method's cost: the
+    result is correct **modulo pi/2**, and nothing blind can do better. A real
+    link resolves the ambiguity by differentially encoding the quadrant; see
+    :class:`~oosim.components.coherent.CarrierRecovery` for how it is resolved
+    here.
+
+    ``window`` is the one real trade. Too short and the estimate is noisy, which
+    shows up as extra EVM; too long and it cannot follow a fast-drifting laser,
+    which shows up as an SNR ceiling that no amount of power lifts. The default
+    of 64 symbols suits a linewidth-times-symbol-period around 1e-5, which is a
+    100 kHz laser at 32 GBd.
+    """
+    if test_phases < 2:
+        raise ValueError(f"test_phases must be >= 2, got {test_phases}")
+    if window < 1:
+        raise ValueError(f"window must be >= 1, got {window}")
+
+    values = symbols.astype(np.complex128)
+    points = np.asarray(constellation).astype(np.complex128)
+    count = values.shape[0]
+    if count == 0:
+        return np.zeros(0, dtype=np.float64)
+
+    candidates = np.arange(test_phases, dtype=np.float64) * (math.pi / 2.0) / test_phases
+    rotations = np.exp(-1j * candidates)
+
+    # The full cost tensor is (symbols x phases x points), which for a long run
+    # at 256-QAM is tens of gigabytes. It is built a slab at a time instead.
+    cost = np.empty((count, test_phases), dtype=np.float64)
+    stride = max(1, int(4e6 // (test_phases * max(points.size, 1))))
+    for start in range(0, count, stride):
+        block = values[start : start + stride, None] * rotations[None, :]
+        distance = np.abs(block[:, :, None] - points[None, None, :])
+        cost[start : start + stride] = distance.min(axis=2) ** 2
+
+    # Centred moving sum, with the ends held rather than tapered: a window that
+    # shrinks at the edges is noisier exactly where there is no data to check it
+    # against, and the first and last few symbols are discarded by the analyser
+    # anyway.
+    lead = window // 2
+    padded = np.pad(cost, ((lead, window - lead), (0, 0)), mode="edge")
+    cumulative = np.concatenate([np.zeros((1, test_phases)), np.cumsum(padded, axis=0)])
+    summed = cumulative[window : window + count] - cumulative[:count]
+
+    phase = candidates[np.argmin(summed, axis=1)]
+
+    # Unwrap: consecutive estimates that differ by about a quarter turn are the
+    # ambiguity re-latching, not the laser jumping.
+    quarter = math.pi / 2.0
+    steps = np.diff(phase)
+    steps -= quarter * np.round(steps / quarter)
+    return np.concatenate([[phase[0]], phase[0] + np.cumsum(steps)])
+
+
 def error_vector_magnitude(received: np.ndarray, reference: np.ndarray) -> float:
     """RMS EVM, as a fraction of the reference's RMS amplitude.
 

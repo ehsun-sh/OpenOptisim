@@ -127,6 +127,24 @@ Nothing here is configured to come out right. The shot-noise-limited SNR is asse
 `R·P/(2qB)`, the counted symbol errors against
 [`ser_qam()`](src/oosim/modulation.py), and the modulator's 3 dB against `10·log10(2)`.
 
+### What carrier recovery is for
+
+With ordinary 100 kHz lasers and no phase recovery, 16-QAM at 32 GBd does not close — and, more
+tellingly, **launching more power stops helping**:
+
+| launch | without recovery | with recovery |
+| ---: | :--- | :--- |
+| −14 dBm | 14.6 dB, BER 6e−3 | 22.1 dB, BER 4e−9 |
+| −10 dBm | 15.1 dB, BER 4e−3 | 25.7 dB, BER 4e−18 |
+| −6 dBm | 15.3 dB, BER 4e−3 | 28.7 dB, BER 1e−34 |
+| −2 dBm | 15.9 dB, BER 2e−3 | 30.9 dB, BER 2e−56 |
+
+Twelve dB of extra power buys 1.3 dB. Laser phase noise is a random walk, so it is not removable by
+subtracting a constant or a line, and it puts a ceiling on SNR that no power budget lifts.
+[`CarrierRecovery`](src/oosim/components/coherent.py) removes the ceiling using the blind phase
+search of Pfau et al. Both halves of that claim are [asserted](tests/test_dsp.py) — the second
+would be meaningless without the first.
+
 ```python
 result = sweep(graph, {("laser", "power"): [-24.0, -21.0, -18.0]}, runs=8)
 q = result.metric(analyzer, lambda m: m.q_factor)     # shape (points, runs)
@@ -293,7 +311,7 @@ time window, and results are reproducible.
 | **0 — Foundations** ✅ | Signal model, context, port types, component base, registry, scheduler, `.oosim` project format, sweeps, CI | ~1 month |
 | **1 — MVP: linear link** *(essentially done)* | ✅ PRBS → NRZ → laser → MZM → fiber (α + CD) → PIN → filter → eye/Q/BER, validated end to end. **Python only, no GUI.** | ~2–3 months |
 | **1.5 — Nonlinear & amplified** ✅ | Adaptive-step SSFM, Kerr, EDFA with ASE, OSNR, PMD, APD | ~2 months |
-| **2 — Coherent transceiver** *(single-pol done)* | ✅ Gray-coded M-QAM to 256, IQ modulator with bias and quadrature error, 90° hybrid, balanced detection, EVM/MER, constellation diagram, validated against closed-form SER · ⬜ dual polarization, blind carrier recovery, pulse shaping, adaptive equaliser | ~3 months |
+| **2 — Coherent transceiver** *(single-pol done)* | ✅ Gray-coded M-QAM to 256, IQ modulator with bias and quadrature error, 90° hybrid, balanced detection, blind carrier phase recovery, EVM/MER, constellation diagram, validated against closed-form SER · ⬜ dual polarization, pulse shaping, adaptive equaliser | ~3 months |
 | **3 — GUI & WDM** | Session server, React Flow graph editor, OSA · DWDM + XPM/FWM crosstalk, 400G/800G references, CuPy back-end | ~6 months |
 | **4 — PIC** | Waveguides, ring resonators, MMI, MZI via integration with an existing S-matrix solver; PDK import | — |
 

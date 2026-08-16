@@ -9,6 +9,7 @@ would notice.
 from __future__ import annotations
 
 import math
+from typing import Any
 
 import numpy as np
 import pytest
@@ -16,6 +17,7 @@ import pytest
 from oosim.modulation import (
     ber_qam,
     bits_to_indices,
+    blind_phase_search,
     error_vector_magnitude,
     gray_pam_levels,
     indices_to_bits,
@@ -172,3 +174,102 @@ def test_a_higher_order_format_needs_more_snr_for_the_same_ser() -> None:
     """The whole trade the tool exists to let someone explore."""
     snr = 100.0
     assert ser_qam(snr, 2) < ser_qam(snr, 4) < ser_qam(snr, 6)
+
+
+# --------------------------------------------------------------------------
+# Blind phase search
+# --------------------------------------------------------------------------
+
+
+def _impaired(
+    bits_per_symbol: int, phase: np.ndarray, sigma: float = 0.04, seed: int = 0
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """A rotated, noisy symbol sequence and the alphabet it was drawn from."""
+    rng = np.random.default_rng(seed)
+    points = qam_constellation(bits_per_symbol)
+    indices = rng.integers(0, points.shape[0], size=phase.shape[0])
+    clean = points[indices]
+    noise = rng.normal(0, sigma, phase.shape[0]) + 1j * rng.normal(0, sigma, phase.shape[0])
+    return clean * np.exp(1j * phase) + noise, clean, points
+
+
+def _residual(recovered: np.ndarray, clean: np.ndarray) -> float:
+    """The constant rotation left over, which the quadrant ambiguity permits."""
+    return float(np.angle(np.mean(recovered * np.conj(clean))))
+
+
+@pytest.mark.parametrize("bits_per_symbol", [2, 4, 6])
+@pytest.mark.parametrize(
+    ("name", "make"),
+    [
+        ("static", lambda n: np.full(n, 0.3)),
+        ("frequency offset", lambda n: np.linspace(0.0, 2.0, n)),
+        ("random walk", lambda n: np.cumsum(np.random.default_rng(5).normal(0, 0.01, n))),
+    ],
+)
+def test_phase_search_tracks_every_kind_of_rotation(
+    bits_per_symbol: int, name: str, make: Any
+) -> None:
+    """A constant, a ramp, and a walk — the three things a carrier actually does.
+
+    The walk is the one that matters: it is not removable by subtracting a
+    constant or a line, which is exactly why a blind *search* is needed rather
+    than a closed-form estimate.
+    """
+    count = 4096
+    received, clean, points = _impaired(bits_per_symbol, make(count))
+
+    phase = blind_phase_search(received, points)
+    recovered = received * np.exp(-1j * phase)
+    # What is left may be a constant quarter turn; remove it the way the
+    # measurement block does, then the symbols must decide correctly.
+    aligned = recovered * np.exp(-1j * _residual(recovered, clean))
+
+    errors = np.count_nonzero(nearest_indices(aligned, points) != nearest_indices(clean, points))
+    assert errors <= count // 200, f"{name}: {errors} symbol errors after recovery"
+
+
+def test_what_remains_is_a_quarter_turn_at_most() -> None:
+    """The ambiguity is a real limit of blind estimation, not a bug to fix.
+
+    Asserted rather than glossed: no blind method can resolve it, and a link that
+    needs it resolved has to encode the quadrant differentially.
+    """
+    count = 2048
+    received, clean, points = _impaired(4, np.full(count, 1.1))
+    recovered = received * np.exp(-1j * blind_phase_search(received, points))
+
+    residual = _residual(recovered, clean)
+    nearest_quarter = (math.pi / 2.0) * round(residual / (math.pi / 2.0))
+    assert abs(residual - nearest_quarter) < 0.05
+
+
+def test_the_window_is_a_trade_and_not_a_free_parameter() -> None:
+    """Too long a window cannot follow a fast laser. That is the documented cost.
+
+    A test that only ever used the default would let the window silently stop
+    mattering, and the parameter would become decoration.
+    """
+    count = 4096
+    fast = np.cumsum(np.random.default_rng(7).normal(0, 0.06, count))
+    received, clean, points = _impaired(4, fast)
+    reference = nearest_indices(clean, points)
+
+    def errors(window: int) -> int:
+        recovered = received * np.exp(-1j * blind_phase_search(received, points, window=window))
+        aligned = recovered * np.exp(-1j * _residual(recovered, clean))
+        return int(np.count_nonzero(nearest_indices(aligned, points) != reference))
+
+    assert errors(16) < errors(512)
+
+
+@pytest.mark.parametrize(
+    ("kwargs", "match"), [({"test_phases": 1}, "test_phases"), ({"window": 0}, "window")]
+)
+def test_phase_search_rejects_impossible_settings(kwargs: dict[str, int], match: str) -> None:
+    with pytest.raises(ValueError, match=match):
+        blind_phase_search(qam_constellation(2), qam_constellation(2), **kwargs)
+
+
+def test_phase_search_handles_an_empty_sequence() -> None:
+    assert blind_phase_search(np.zeros(0, dtype=np.complex128), qam_constellation(2)).shape == (0,)

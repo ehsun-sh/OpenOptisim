@@ -22,6 +22,7 @@ import numpy as np
 from oosim import Graph, SimulationContext, manifests, sweep
 from oosim.analysis import eye_histogram
 from oosim.components import (
+    CarrierRecovery,
     CoherentReceiver,
     ConstellationAnalyzer,
     ConstellationDiagram,
@@ -54,20 +55,20 @@ def build(sequence_length: int = 4096) -> Graph:
     )
     mapper = graph.add(QAMMapper(bits_per_symbol=float(BITS_PER_SYMBOL), label="map"))
     driver = graph.add(IQDriver(v_pi=V_PI, predistort=True, label="drv"))
-    # 10 kHz is a narrow external-cavity laser, which is what a coherent link
-    # actually uses — and here it is not merely realistic but necessary: laser
-    # phase noise is a random walk, the analyser only removes a *linear* phase
-    # ramp, and there is no carrier phase recovery in the chain yet. At 100 kHz
-    # the accumulated walk puts a hard floor near 18 dB SNR however much power
-    # is launched, which is precisely why real receivers carry a phase-recovery
-    # stage. Turning the linewidth down is honest; hiding the floor would not be.
-    laser = graph.add(CWLaser(power=-10.0, wavelength=1550.0, linewidth=10.0, label="tx"))
+    # 100 kHz, which is an ordinary coherent-transmitter laser rather than a
+    # specially quiet one. An earlier version of this export had to run at 10 kHz
+    # because there was no carrier recovery in the chain and the accumulated
+    # phase walk put a hard floor near 18 dB SNR however much power was
+    # launched. The CarrierRecovery stage below is what makes the realistic
+    # number usable again.
+    laser = graph.add(CWLaser(power=-8.0, wavelength=1550.0, linewidth=100.0, label="tx"))
     modulator = graph.add(IQModulator(v_pi=V_PI, label="mod"))
     meter = graph.add(PowerMeter(label="pm"))
-    lo = graph.add(CWLaser(power=10.0, wavelength=1550.0, linewidth=10.0, label="lo"))
+    lo = graph.add(CWLaser(power=10.0, wavelength=1550.0, linewidth=100.0, label="lo"))
     receiver = graph.add(CoherentReceiver(responsivity=0.8, label="rx"))
     sampler = graph.add(IQSampler(label="smp"))
-    analyzer = graph.add(ConstellationAnalyzer(label="vsa"))
+    recovery = graph.add(CarrierRecovery(window=64.0, test_phases=32.0, label="cr"))
+    analyzer = graph.add(ConstellationAnalyzer(ignore_edges=64.0, label="vsa"))
     diagram = graph.add(ConstellationDiagram(bins=96.0, extent=1.5, label="cd"))
 
     graph.chain(prbs, mapper, driver)
@@ -80,9 +81,10 @@ def build(sequence_length: int = 4096) -> Graph:
     graph.connect(receiver["i"], sampler["i"])
     graph.connect(receiver["q"], sampler["q"])
     graph.connect(mapper["out"], sampler["reference"])
-    graph.connect(sampler["out"], analyzer["in"])
+    graph.connect(sampler["out"], recovery["in"])
+    graph.connect(recovery["out"], analyzer["in"])
     graph.connect(mapper["out"], analyzer["reference"])
-    graph.connect(sampler["out"], diagram["in"])
+    graph.connect(recovery["out"], diagram["in"])
     return graph
 
 
